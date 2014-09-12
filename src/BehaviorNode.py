@@ -12,7 +12,7 @@ import os
 import subprocess
 import re
 import time
-import numpy as np
+#import numpy as np
 import tf
 import socket
 import std_msgs
@@ -22,10 +22,10 @@ import sys
 import random
 
 ### Memojito provides memoization (caching) services.
-import memojito
+#import memojito
 
 ### Pyglet provides graphics and resource management.
-import pyglet
+#import pyglet
 
 import owyl
 
@@ -38,27 +38,27 @@ pi_1_4 = pi/4.0
 pi_3_4 = (pi*3)/4
 
 ### Optimized attribute getters for sprites..
-from operator import attrgetter
-getX = attrgetter('x')
-getY = attrgetter('y')
-getR = attrgetter('rotation')
+#from operator import attrgetter
+#getX = attrgetter('x')
+#getY = attrgetter('y')
+#getR = attrgetter('rotation')
 
-pyglet.resource.path = [os.path.dirname(os.path.abspath(__file__)),]
-pyglet.resource.reindex()
+#pyglet.resource.path = [os.path.dirname(os.path.abspath(__file__)),]
+#pyglet.resource.reindex()
 
 ## Cocos provides scene direction and composition
-from cocos.director import director
-from cocos.scene import Scene
-from cocos.actions import FadeIn
-from cocos.layer import ScrollableLayer, ScrollingManager
+#from cocos.director import director
+#from cocos.scene import Scene
+#from cocos.actions import FadeIn
+#from cocos.layer import ScrollableLayer, ScrollingManager
 
 ## Rabbyt provides collision detection
-from rabbyt.collisions import collide_single
+#from rabbyt.collisions import collide_single
 
 ## Owyl provides the wisdom
 from owyl import blackboard
 
-from steering import Steerable
+#from steering import Steerable
 
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String
