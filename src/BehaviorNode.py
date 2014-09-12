@@ -61,7 +61,7 @@ from owyl import blackboard
 from steering import Steerable
 
 from geometry_msgs.msg import Twist
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from sound_play.libsoundplay import SoundClient
 from std_msgs.msg import Header
 from sensor_msgs.msg import PointCloud2
@@ -102,7 +102,10 @@ class Tree:
                 rospy.loginfo("Unrecognized Tree Name!\n")
 
         self.BehaviorNode = rospy.init_node("BehaviorNode")
-        self.itf_talk_pub = rospy.Publisher('itf_talk', String, queue_size=1)
+        rospy.Subscriber("speech_active", Bool, self.speakingcallback)
+        self.zenodial_listen_pub = rospy.Publisher("zenodial_listen", String, queue_size=1)
+        self.itf_talk_pub = rospy.Publisher("itf_talk", String, queue_size=1)
+        self.robot_movement_pub = rospy.Publisher("robot_movement", String, queue_size=1)
         self.commandKeywords = {
                 'stop': ['stop', 'halt', 'abort', 'kill', 'panic', 'off', 'freeze', 'shut down', 'turn off', 'help', 'help me', 'abhor', 'a whore', 'a bore'],
                 'slower': ['slow down', 'slower'],
@@ -124,14 +127,14 @@ class Tree:
                 'stop speech': ['pause speech', 'stop speech', 'pause speaking', 'stop speaking', 'top speech', 'top speaking', 'top speed', 'end speech', 'end speaking']}
 
         ### Inputs
-        # self.saliencyTargetPos = array([0, 0, 0])   # position of the current saliency target
-        # self.saliencyTargetVel = array([0, 0, 0])   # average velocity of the current saliency target over the last second
+        self.saliencyTargetPos = [0.0, 0.0]         # position of the current saliency target
+        self.saliencyTargetVel = 0.0                # average velocity of the current saliency target over the last second
         self.saliencyTargetAge = 0                  # time since the last significant change in the saliency target position
-        # self.faceTargetPos = array([0, 0, 0])       # position of the current face target
-        # self.faceTargetVel = array([0, 0, 0])       # average velocity of the current face target over the last second
+        self.faceTargetPos = [[0.0, 0.0]]           # position of the current face target
+        self.faceTargetVel = 0.0                    # average velocity of the current face target over the last second
         self.faceTargetAge = 0                      # time since the last significant change in the face target position
-        # self.bodyTargetPos = array([0, 0, 0])       # position of the current body target
-        # self.bodyTargetVel = array([0, 0, 0])       # average velocity of the current body target over the last second
+        self.bodyTargetPos = [[0.0, 0.0]]           # position of the current body target
+        self.bodyTargetVel = 0.0                    # average velocity of the current body target over the last second
         self.bodyTargetAge = 0                      # time since the last significant change in the body target position
         self.audioInput = ""                        # string output of speech-to-text algorithm, raw form
         self.audioInputAge = 0                      # time since the last significant parse of the audio input
@@ -144,6 +147,7 @@ class Tree:
         self.speechOutputAge = 0                    # time since the last speech output from the robot
         self.animationOutput = ""                   # string representation of the last animation output from the robot
         self.animationOutputAge = ""                # time since the last animation output from the robot
+        self.animationOutputDur = 0                 # for zeno body paint
         self.randomInput = 0                        # a random percentile for random behaviors
 
         ### Globals
@@ -151,19 +155,21 @@ class Tree:
         self.highBodyVel = 1        # Not sure what would be considered a high velocity for the body - use 1 for now
         self.eyeFreedom = 0
         self.neckFreedom = 0
+        self.HEAD_NECK = "headneck"
+        self.UPPER_BODY = "ubody"
+        self.LOWER_BODY = "lbody"
 
         ### Locals
         self.commandName = ""
         self.actionName = ""
-        self.bodyOrFace = "body"
-        # self.targetPos = array([0, 0, 0])
-        # self.glanceOrSaccadeTargetPos = array([0, 0, 0])
+        self.bodyOrFace = ""
+        self.targetPos = [[0.0, 0.0]]
+        self.glanceOrSaccadeTargetPos = [[0.0, 0.0]]
         self.firstGreeting = False
+        self.speechActive = False
         self.blackboard = blackboard.Blackboard()
 
         ### Subtrees
-
-        ''' << To be confirmed if the robot can blink >>
         ## Blink Subtree. A small example of a tree to run in parallel with the other subtrees.
         # Assumes randomInput is recalculated each frame
         self.blinkSubtree = \
@@ -173,37 +179,34 @@ class Tree:
                         owyl.sequence(
                             self.isSwitchingTarget(),
                             # blink 50% more often when switching targets
-                            self.isLess(self.randomInput, self.blinkChance*1.5),
+                            self.isLess(num1=self.randomInput, num2=self.blinkChance*1.5),
                             self.blink()
                         ),
                         owyl.sequence(
                             owyl.selector(
-                                self.isGreater(linalg.norm(self.bodyTargetVel), 1),
+                                self.isGreater(num1=linalg.norm(self.bodyTargetVel), num2=1),
                                 self.isSpeaking()
                             ),
-                            self.isLess(self.randomInput, self.blinkChance*1.2),
+                            self.isLess(num1=self.randomInput, num2=self.blinkChance*1.2),
                             self.blink()
                         ),
                         owyl.sequence(
-                            self.isLess(self.randomInput, self.blinkChance),
+                            self.isLess(num1=self.randomInput, num2=self.blinkChance),
                             self.blink()
                         )
                     )
                 ),
-                limit_period=0.4 # Yield to the other behaviors after every 400 milliseconds of processing
+                limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
             )
-        '''
 
         ## Announce the action we're about to take and then reset the robot to a default stance.
         # Though we announce an action, this tree doesn't execute the action.
         # Assumes actionName has been set
         self.announceAndResetTree = \
-            owyl.sequence( # announce the action and then reset
+            owyl.sequence(  # announce the action and then reset
                 owyl.selector(  # If we're not speaking, then speak
                     self.isSpeaking(),
-                    #self.say(utterance=("I'll start " + self.actionToPhrase(self.actionName) + "..."))
-                    self.sayStartAction(actionName=self.actionToPhrase(self.action))
-                    #self.say(utterance="I'll start ")
+                    self.sayStartAction(commandName=self.actionToPhrase(self.actionName))
                 ),
                 owyl.selector(  # If we're no in a default stance, reset (blend) to the default stance
                     self.isDefaultStance(),
@@ -232,7 +235,6 @@ class Tree:
                 )
             )
 
-
         ## Select a basic command to execute, once we know that we've been given a command.
         # Assumes bodyOrFace has been set, to distinguish body actions from face actions
         self.selectBasicCommandSubtree = \
@@ -246,15 +248,27 @@ class Tree:
                     owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
                 ),
                 owyl.sequence(
-                    self.setVariable(var=self.commandName, value="PointUp"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(
                     self.setVariable(var=self.commandName, value="WalkBackward"),
                     owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
                 ),
                 owyl.sequence(
+                    self.setVariable(var=self.commandName, value="TurnLeft"),
+                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+                ),
+                owyl.sequence(
+                    self.setVariable(var=self.commandName, value="TurnRight"),
+                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+                ),
+                owyl.sequence(
+                    self.setVariable(var=self.commandName, value="PointUp"),
+                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+                ),
+                owyl.sequence(
                     self.setVariable(var=self.commandName, value="PointDown"),
+                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+                ),
+                owyl.sequence(
+                    self.setVariable(var=self.commandName, value="Wave"),
                     owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
                 ),
                 owyl.sequence(  # If we should show an emotion, then select the right one and show it.
@@ -275,16 +289,15 @@ class Tree:
         # Assumes targetPos has been set to face, body, or salient position
         self.faceGaze = \
             owyl.sequence(
+                # TODO: Get clarification from Hanson and others on the conditions for tracking
                 # owyl.selector(
                 #   self.isFaceNearestAudioSource(self.faceTargetPos), # Do we have the source of the audio?
                 #   self.isFaceMostSalient(self.faceTargetAge, self.saliencyTargetAge), # Do we know the degree/magnitude of saliency?
                 #   self.isFaceCentered(self.faceTargetPos), # Can we find the centroid of all the faces?
                 #   self.isLess(self.randomInput, self.blinkChance*2.0) # Should we really switch tracking targets this often?
                 # ),
-                # TODO: Get clarification from Hanson and others on the conditions for tracking
 
-
-                # self.faceTrack(targetPos, eyeFreedom, neckFreedom, -1) # -1 here indicating that we'll track this point until told to stop
+                # self.faceTrack(pos=targetPos, eyeFree=eyeFreedom, neckFree=neckFreedom, rand=-1)  # -1 here indicating that we'll track this point until told to stop
             )
 
         ## Displays the surprised emotional expression under certain conditions
@@ -292,12 +305,13 @@ class Tree:
         self.startle = \
             owyl.sequence(
                 owyl.selector(
-                    self.isGreater(num1=self.audioInputVol, num2=1), # or whatever counts for a high volume
+                    self.isGreater(num1=self.audioInputVol, num2=1),  # or whatever counts for a high volume
                     self.isGreater(num1=linalg.norm(self.faceTargetVel), num2=1),
                     self.isGreater(num1=linalg.norm(self.bodyTargetVel), num2=1),
                     self.isGreater(num1=linalg.norm(self.saliencyTargetVel), num2=1)
                 ),
-                self.showAction("Surprised", "face")
+                self.showAction(action="OpenMouth", part=self.HEAD_NECK)
+                # self.showAction(action="Surprised", part="face")
             )
 
         ## Random eye movements which are much faster and less pronounced than glances.
@@ -307,14 +321,13 @@ class Tree:
         self.saccade = \
             owyl.selector(
                 owyl.sequence(
-                    self.isGreater(self.randomInput, 0.5),
-                    self.faceTrack(self.glanceOrSaccadeTargetPos, self.randomInput*0.25*self.eyeFreedom, self.randomInput*0.10*self.neckFreedom, self.randomInput)
+                    self.isGreater(num1=self.randomInput, num2=0.5),
+                    self.faceTrack(pos=self.glanceOrSaccadeTargetPos, eyeFree=self.randomInput*0.25*self.eyeFreedom, neckFree=self.randomInput*0.10*self.neckFreedom, rand=self.randomInput)
                 ),
                 owyl.sequence(
-                    self.faceTrack(self.glanceOrSaccadeTargetPos, self.randomInput*0.75*self.eyeFreedom, self.randomInput*0.30*self.neckFreedom, self.randomInput)
+                    self.faceTrack(pos=self.glanceOrSaccadeTargetPos, eyeFree=self.randomInput*0.75*self.eyeFreedom, neckFree=self.randomInput*0.30*self.neckFreedom, rand=self.randomInput)
                 )
             )
-
 
         ## Random eye movements which signal recognition of targets.
         # Assumes targetPos has been set to face or salient position
@@ -323,17 +336,17 @@ class Tree:
             owyl.selector(
                 owyl.sequence(
                     owyl.selector(
-                        self.isLess(self.faceTargetAge, 1),
-                        self.isLess(self.randomInput, 0.0025)
+                        self.isLess(num1=self.faceTargetAge, num2=1),
+                        self.isLess(num1=self.randomInput, num2=0.0025)
                     ),
-                    self.faceTrack(self.glanceOrSaccadeTargetPos, self.eyeFreedom, self.neckFreedom, self.randomInput*2.5)
+                    self.faceTrack(pos=self.glanceOrSaccadeTargetPos, eyeFree=self.eyeFreedom, neckFree=self.neckFreedom, rand=self.randomInput*2.5)
                 ),
                 owyl.sequence(
                     owyl.selector(
-                        self.isLess(self.saliencyTargetAge, 1),
-                        self.isLess(self.randomInput, 0.0025)
+                        self.isLess(num1=self.saliencyTargetAge, num2=1),
+                        self.isLess(num1=self.randomInput, num2=0.0025)
                     ),
-                    self.faceTrack(self.glanceOrSaccadeTargetPos, self.eyeFreedom, self.neckFreedom, self.randomInput*2.5)
+                    self.faceTrack(pos=self.glanceOrSaccadeTargetPos, eyeFree=self.eyeFreedom, neckFree=self.neckFreedom, rand=self.randomInput*2.5)
                 )
             )
 
@@ -341,47 +354,49 @@ class Tree:
         # Be careful not to play this more than once in the same encounter.
         self.greeting = \
             owyl.sequence(
-                self.isVariable(self.firstGreeting, False),
-                self.setVariable(self.firstGreeting, True),
-                self.say("Hello!"),
-                self.showAction("Wave", "body"),
-                self.showAction("Smile", "face")
+                self.isVariable(var=self.firstGreeting, value=False),
+                self.setVariable(var=self.firstGreeting, value=True),
+                self.say(utterance="Hello!"),
+                self.showAction(action="Wave", part=self.UPPER_BODY),
+                self.showAction(action="Smile", part=self.HEAD_NECK)
             )
 
         ## When people are too close, move head back and up while playing the afraid expression animation.
         self.awkward = \
             owyl.sequence(
-                self.showAction("LookUp", "face"),
-                self.showAction("Afraid", "face")
+                self.showAction(action="LookUp", part=self.HEAD_NECK),
+                # self.showAction(action="Afraid", part="face")
+                self.showAction(action="Frown", part=self.HEAD_NECK)
             )
 
         ## When people are very close, move head forward and down while playing the innoscent expression animation.
         self.shy = \
             owyl.sequence(
-                self.showAction("LookDown", "face"),
-                self.showAction("Innocent", "face")
+                self.showAction(action="LookDown", part=self.HEAD_NECK),
+                # self.showAction(action="Innocent", part=self.HEAD_NECK)
+                self.showAction(action="Frown", part=self.HEAD_NECK)
             )
 
         ## In general, ZoidStein's expressions should mimic the emotional input of its targets.
         self.mimic = \
             owyl.selector(
                 owyl.sequence(
-                    self.isVaraible(self.emotionInput, "Happy"),
-                    self.showAction("Happy", "body"),
-                    self.showAction("Happy", "face")
+                    self.isVariable(var=self.emotionInput, value="Happy"),
+                    self.showAction(action="Happy", part=self.UPPER_BODY),
+                    self.showAction(action="Happy", part=self.HEAD_NECK)
                 )
+                # TODO: Do we have to mimic all the emotionInput or just happy?
             )
-
 
     def makeBasicZoidSteinTree(self):
         ## The scripted dance of ZoidStein, used when no faces or salient targets are detected.
         # Assumes body state has been reset to starting state
-        self.zoidSteinBodyDance = \
+        zoidSteinBodyDance = \
             owyl.sequence(
-                self.showCommand("WalkForward", "body"),
-                self.showCommand("PointUp", "body"),
-                self.showCommand("PointDown", "body"),
-                self.showCommand("WalkBackward", "body")
+                self.showCommand(commandName="WalkForward", part=self.LOWER_BODY),
+                self.showCommand(commandName="WalkBackward", part=self.LOWER_BODY),
+                self.showCommand(commandName="PointUp", part=self.UPPER_BODY),
+                self.showCommand(commandName="PointDown", part=self.UPPER_BODY)
             )
 
         ## body behavior subtree
@@ -391,59 +406,57 @@ class Tree:
                 owyl.repeatAlways(
                     owyl.selector(  # Select response to command or natural behavior
                         owyl.sequence(  # If the last audio or blender input is a command, then select a response
-                            self.isCommand(self.commandName),
-                            self.setVariable(self.bodyOrFace, "body"),
+                            self.isCommand(commandName=self.commandName),
+                            # self.setVariable(var=self.bodyOrFace, value="body"),
+                            self.setVariable(var=self.bodyOrFace, value=self.UPPER_BODY),
                             owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
                         ),
                         # It's not a command, so start checking for natural behaviors
                         owyl.sequence(
-                            self.IsNoSalientTarget(),
-                            self.IsNoFaceTarget(),
-                            self.IsNoAudioInput(),
-                            self.IsNoRosInput(),
-                            self.IsNoEmotionInput(),
+                            self.isNoSalientTarget(),
+                            self.isNoFaceTarget(),
+                            self.isNoAudioInput(),
+                            self.isNoRosInput(),
+                            self.isNoEmotionInput(),
                             # There's nothing to do, so let's dance!
                             owyl.visit(zoidSteinBodyDance, blackboard=self.blackboard)
                         ),
-
                         owyl.sequence(
-                            #TODO
-                        ),
-                        # the other natural actions, once we have a saliency target, etc.
+                            #TODO: the other natural actions, once we have a saliency target, etc.
+                        )
                     )
                 ),
                 limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
             )
 
-        ## face behavior subtree
+        ## face & neck behavior subtree
         # TODO: Attach subtrees properly
         zoidSteinFaceSubtree = \
             owyl.limit(
                 owyl.repeatAlways(
-                    owyl.selector(  # Select from one of several mutually exclusive face behaviors
+                    owyl.selector(  # Select from one of several mutually exclusive face & neck behaviors
                         owyl.sequence(  # If the last audio or blender input is a command, then select a response
-                            self.isCommand(self.commandName),
-                            self.setVariable(self.bodyOrFace, "face"),
+                            self.isCommand(commandName=self.commandName),
+                            self.setVariable(var=self.bodyOrFace, value="face"),
                             owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
                         ),
                         owyl.sequence(
-                            self.IsSalientTarget(),
-                            self.IsNoFaceTarget(),
-                            self.IsNoAudioInput(),
-                            self.IsNoRosInput(),
-                            self.IsNoEmotionInput(),
-                            owyl.visit(zoidSteinFaceGaze, blackboard=self.blackboard)
+                            self.isSalientTarget(),
+                            self.isNoFaceTarget(),
+                            self.isNoAudioInput(),
+                            self.isNoRosInput(),
+                            self.isNoEmotionInput(),
+                            owyl.visit(self.faceGaze, blackboard=self.blackboard)
                         ),
                         owyl.sequence(
-                            self.IsFaceTarget(),
+                            self.isFaceTarget(),
                         )
-
                     )
                 ),
                 limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
             )
 
-        ## Zeno's root tree
+        ## ZoidStein's root tree
         zoidSteinTree = \
             owyl.parallel(  # At the highest level, run several parallel behaviors
                 owyl.visit(zoidSteinBodySubtree, blackboard=self.blackboard),
@@ -469,36 +482,36 @@ class Tree:
     def makeBasicZenoTree(self):
         ## Zeno's Body Paint subtree
         zenoBodyPaint = \
-          owyl.selector(
-            owyl.sequence(
-              self.IsNotSameBrushStroke(),
-              self.IsGreater(self.animationOutputDur, 2),
-              self.setVariable(self.actionName, "BrushStrokeGesture"),
-              owyl.selector(  # try the action sequence (subtree) or report failure
+            owyl.selector(
                 owyl.sequence(
-                  owyl.visit(announceAndResetTree, blackboard=self.blackboard),
-                  self.showAction(self.actionName),  # Finally play the action's animation
+                    self.isNotSameBrushStroke(),
+                    self.isGreater(num1=self.animationOutputDur, num2=2),
+                    self.setVariable(self.actionName, "BrushStrokeGesture"),
+                    owyl.selector(  # try the action sequence (subtree) or report failure
+                        owyl.sequence(
+                            owyl.visit(self.announceAndResetTree, blackboard=self.blackboard),
+                            self.showAction(self.actionName),  # Finally play the action's animation
+                        ),
+                        owyl.sequence(
+                            self.say("I'm not feeling inspired today..."),
+                            owyl.fail()
+                        )
+                    )
                 ),
                 owyl.sequence(
-                   self.say("I'm not feeling inspired today..."),
-                   owyl.fail()
+                    self.setVariable(self.actionName, "Idle"),
+                    owyl.selector(  # try the command sequence (subtree) or report failure
+                        owyl.sequence(
+                            owyl.visit(self.announceAndResetTree, blackboard=self.blackboard),
+                            self.showAction(self.actionName),  # Finally play the action's animation
+                        ),
+                        owyl.sequence(
+                            self.say("Why can't I stand?"),
+                            owyl.fail()
+                        )
+                    )
                 )
-              )
-            ),
-            owyl.sequence(
-              self.setVariable(self.actionName, "Idle"),
-              owyl.selector(  # try the command sequence (subtree) or report failure
-                owyl.sequence(
-                  owyl.visit(announceAndResetTree, blackboard=self.blackboard),
-                  self.showAction(self.actionName),  # Finally play the action's animation
-                ),
-                owyl.sequence(
-                   self.say("Why can't I stand?"),
-                   owyl.fail()
-                )
-              )
             )
-          )
 
         ## body behavior subtree
         zenoBodySubtree = \
@@ -508,49 +521,47 @@ class Tree:
                         owyl.sequence(  # If the last audio or blender input is a command, then select a response
                             self.isCommand(self.commandName),
                             self.setVariable(self.bodyOrFace, "body"),
-                            owyl.visit(selectBasicCommandSubtree, blackboard=self.blackboard)
+                            owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
                         ),
                         # It's not a command, so start checking for natural behaviors
                         owyl.sequence(
-                            self.IsNoSalientTarget(),
-                            self.IsNoFaceTarget(),
-                            self.IsNoAudioInput(),
-                            self.IsNoRosInput(),
-                            self.IsNoEmotionInput(),
+                            self.isNoSalientTarget(),
+                            self.isNoFaceTarget(),
+                            self.isNoAudioInput(),
+                            self.isNoRosInput(),
+                            self.isNoEmotionInput(),
                             # There's nothing to do, so let's paint!
                             owyl.visit(zenoBodyPaint, blackboard=self.blackboard)
                         ),
                         owyl.sequence(
-
-                        ),
-                        # the other natural actions, once we have a saliency target, etc.
+                            # TODO: the other natural actions, once we have a saliency target, etc.
+                        )
                     )
                 ),
                 limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
             )
 
-        # face behavior subtree
+        # face & neck behavior subtree
         zenoFaceSubtree = \
             owyl.limit(
                 owyl.repeatAlways(
-                    owyl.selector(  # Select from one of several mutually exclusive face behaviors
+                    owyl.selector(  # Select from one of several mutually exclusive face & neck behaviors
                         owyl.sequence(  # If the last audio or blender input is a command, then select a response
                             self.isCommand(self.commandName),
                             self.setVariable(self.bodyOrFace, "face"),
-                            owyl.visit(selectBasicCommandSubtree, blackboard=self.blackboard)
+                            owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
                         ),
                         owyl.sequence(
-                            self.IsSalientTarget(),
-                            self.IsNoFaceTarget(),
-                            self.IsNoAudioInput(),
-                            self.IsNoRosInput(),
-                            self.IsNoEmotionInput(),
-                            owyl.visit(zenoFaceGaze, blackboard=self.blackboard)
+                            self.isSalientTarget(),
+                            self.isNoFaceTarget(),
+                            self.isNoAudioInput(),
+                            self.isNoRosInput(),
+                            self.isNoEmotionInput(),
+                            owyl.visit(self.faceGaze, blackboard=self.blackboard)
                         ),
                         owyl.sequence(
-              self.IsFaceTarget(),
+                            self.isFaceTarget()
                         )
-
                     )
                 ),
                 limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
@@ -582,42 +593,71 @@ class Tree:
     def generateRandomInput(self):
         self.randomInput = random.random()
 
+    def speakingcallback(self, data):
+        self.speechActive = data.data
+
+    def actionToPhrase(self, commandName):
+        for (key, keywords) in self.commandKeywords.iteritems():
+            for word in keywords:
+                if commandName.find(word) > -1:
+                    return key
+
+    @owyl.taskmethod
+    def toZenoDial(self, **kwargs):
+        self.zenodial_listen_pub.publish(kwargs["utterance"])
+        yield True
+
     @owyl.taskmethod
     def isLess(self, **kwargs):
-        num1 = kwargs['num1']
-        num2 = kwargs['num2']
-
-        if num1 < num2:
+        if kwargs["num1"] < kwargs["num2"]:
             yield True
         else:
             yield False
 
     @owyl.taskmethod
     def isGreater(self, **kwargs):
-        num1 = kwargs['num1']
-        num2 = kwargs['num2']
-
-        if num1 > num2:
+        if kwargs["num1"] > kwargs["num2"]:
             yield True
         else:
             yield False
 
     @owyl.taskmethod
-    def isSpeaking(self):
+    def isSwitchingTarget(self):
         # TODO
         yield True
 
     @owyl.taskmethod
+    def blink(self):
+        # TODO
+        yield True
+
+    @owyl.taskmethod
+    def isSpeaking(self):
+        yield self.speechActive
+
+    @owyl.taskmethod
     def say(self, **kwargs):
-        utterance = kwargs['utterance']
-        self.itf_talk_pub.publish(utterance)
+        self.itf_talk_pub.publish(kwargs["utterance"])
         yield True
 
     @owyl.taskmethod
     def sayStartAction(self, **kwargs):
-        actionName = kwargs['actionName']
-        self.itf_talk_pub.publish("I'll start " + actionName + "...")
+        self.itf_talk_pub.publish("I'll start " + kwargs["actionName"] + "...")
         yield True
+
+    @owyl.taskmethod
+    def showAction(self, **kwargs):
+        self.actionName = kwargs["action"]
+        self.bodyOrFace = kwargs["part"]
+        self.robot_movement_pub.Publish(self.actionName + "-" + self.bodyOrFace)
+
+    @owyl.taskmethod
+    def faceTrack(self, **kwargs):
+        pos = kwargs["pos"]
+        eyeFree = kwargs["eyeFree"]
+        neckFree = kwargs["neckFree"]
+        rand = kwargs["rand"]
+        # TODO
 
     @owyl.taskmethod
     def isDefaultStance(self):
@@ -631,30 +671,21 @@ class Tree:
 
     @owyl.taskmethod
     def isCommand(self, **kwargs):
-        commandName = kwargs['commandName']
-
+        self.commandName = kwargs["commandName"]
         for (key, keywords) in self.commandKeywords.iteritems():
             for word in keywords:
-                if commandName.find(word) > -1:
+                if self.commandName.find(word) > -1:
                     yield True
         yield False
 
     @owyl.taskmethod
-    def actionToPhrase(self, **kwargs):
-        commandName = kwargs['commandName']
-
-        if "" == commandName:
-            return ""
-        for (key, keywords) in self.commandKeywords.iteritems():
-            for word in keywords:
-                if commandName.find(word) > -1:
-                    return key
+    def isVariable(self, **kwargs):
+        yield kwargs['var'] == kwargs['value']
 
     @owyl.taskmethod
-    def showCommand(self, **kwargs):
-        commandName = kwargs['commandName']
-        bodyOrFace = kwargs['part']
-
+    def showCommand(self, **kwargs):  # Play the command animation
+        commandName = kwargs["commandName"]
+        part = kwargs["part"]
         message = Message()
         message.textPart = "commandName"
         showActionWithMessage(message)
@@ -671,16 +702,54 @@ class Tree:
 
     @owyl.taskmethod
     def setVariable(self, **kwargs):
-        var = kwargs['var']
-        value = kwargs['value']
-
+        var = kwargs["var"]
+        value = kwargs["value"]
         var = value
         yield True
 
     @owyl.taskmethod
     def showActionWithMessage(self, **kwargs):
-        message = kwargs['message']
+        message = kwargs["message"]
         ##self.BehaviorNode.send()
+        yield True
+
+    @owyl.taskmethod
+    def isNoSalientTarget(self):
+        # TODO
+        yield True
+
+    @owyl.taskmethod
+    def isNoFaceTarget(self):
+        # TODO
+        yield True
+
+    @owyl.taskmethod
+    def isNoAudioInput(self):
+        # TODO
+        yield True
+
+    @owyl.taskmethod
+    def isNoRosInput(self):
+        # TODO
+        yield True
+
+    @owyl.taskmethod
+    def isNoEmotionInput(self):
+        # TODO
+        yield True
+
+    @owyl.taskmethod
+    def isFaceTarget(self):
+        # TODO
+        yield True
+
+    def isSalientTarget(self):
+        # TODO
+        yield True
+
+    @owyl.taskmethod
+    def isNotSameBrushStroke(self):
+        # TODO
         yield True
 
     @owyl.taskmethod
