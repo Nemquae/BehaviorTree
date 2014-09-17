@@ -88,7 +88,6 @@ class switch(object):
 
 class Tree:
     def __init__(self, tree_name):
-        self.schedule(self.update)
         # self.BehaviorNode = rospy.init_node("behavior_tree")
         rospy.Subscriber("itf_listen", String, self.audioInputCallback)
         rospy.Subscriber("speech_active", Bool, self.isSpeakingCallback)
@@ -104,6 +103,8 @@ class Tree:
                 'Turn Right': ['turn right', 'turn rights', 'turns right']}
 
         ### Inputs
+        self.faceTarget = {}                        # seq no: [Person obj, x, y, velocity, age]
+        self.saliencyTarget = {}                    # seq no: [Person obj, x, y, velocity, age]
         self.saliencyTargetPos = [0.0, 0.0]         # position of the current saliency target
         self.saliencyTargetVel = 0.0                # average velocity of the current saliency target over the last second
         self.saliencyTargetAge = 0                  # time since the last significant change in the saliency target position
@@ -123,7 +124,7 @@ class Tree:
         self.speechOutput = ""                      # string representation of the last speech output from the robot
         self.speechOutputAge = 0                    # time since the last speech output from the robot
         self.animationOutput = ""                   # string representation of the last animation output from the robot
-        self.animationOutputAge = ""                # time since the last animation output from the robot
+        self.animationOutputAge = 0                 # time since the last animation output from the robot
         self.animationOutputDur = 0                 # for zeno body paint
         self.randomInput = 0                        # a random percentile for random behaviors
 
@@ -140,8 +141,8 @@ class Tree:
         self.commandName = ""
         self.actionName = ""
         self.bodyOrFace = ""
-        self.targetPos = [[0.0, 0.0]]
-        self.glanceOrSaccadeTargetPos = [[0.0, 0.0]]
+        self.targetPos = {}
+        self.glanceOrSaccadeTargetPos = {}
         self.firstGreeting = False
         self.speechActive = False
         self.idleSince = 0
@@ -156,8 +157,7 @@ class Tree:
                     owyl.selector(
                         owyl.sequence(
                             self.isSwitchingTarget(),
-                            # blink 50% more often when switching targets
-                            self.isLess(num1=self.randomInput, num2=self.blinkChance*1.5),
+                            self.isLess(num1=self.randomInput, num2=self.blinkChance*1.5),  # blink 50% more often when switching targets
                             self.blink()
                         ),
                         owyl.sequence(
@@ -283,6 +283,12 @@ class Tree:
         # Assumes targetPos has been set to face, body, or salient position
         self.faceGaze = \
             owyl.sequence(
+                owyl.selector(
+
+                )
+
+
+
                 # TODO: Get clarification from Hanson and others on the conditions for tracking
                 # owyl.selector(
                 #   self.isFaceNearestAudioSource(self.faceTargetPos), # Do we have the source of the audio?
@@ -388,11 +394,13 @@ class Tree:
         for case in switch(tree_name):
             if case("BasicZenoTree"):
                 # self.robot = Zeno()
-                self.makeBasicZenoTree()
+                self.tree = self.makeBasicZenoTree()
+                self.do_every(0.01, self.tree.next)
                 break
             if case("BasicZoidSteinTree"):
                 self.robot = Zoidstein()
-                self.makeBasicZoidSteinTree()
+                self.tree = self.makeBasicZoidSteinTree()
+                self.do_every(0.01, self.tree.next)
                 break
             if case():
                 rospy.loginfo("Unrecognized Tree Name!\n")
@@ -450,7 +458,7 @@ class Tree:
                             owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
                         ),
                         owyl.sequence(
-                            # self.isSalientTarget(),
+                            # self.isNoSalientTarget(),
                             # self.isNoFaceTarget(),
                             # self.isNoAudioInput(),
                             # self.isNoRosInput(),
@@ -487,7 +495,6 @@ class Tree:
                 ),
                 policy=owyl.PARALLEL_SUCCESS.REQUIRE_ALL
             )
-
         return owyl.visit(zoidSteinTree, blackboard=self.blackboard)
 
     def makeBasicZenoTree(self):
@@ -583,8 +590,8 @@ class Tree:
         # Zeno's root tree
         zenoTree = \
             owyl.parallel(  # At the highest level, run several parallel behaviors
-                owyl.visit(zenoBodySubtree, blackboard=self.blackboard),
-                owyl.visit(zenoFaceSubtree, blackboard=self.blackboard),
+                # owyl.visit(zenoBodySubtree, blackboard=self.blackboard),
+                # owyl.visit(zenoFaceSubtree, blackboard=self.blackboard),
                 owyl.limit(
                     owyl.repeatAlways(
                         owyl.sequence(
@@ -594,17 +601,24 @@ class Tree:
 
                             # Listen for audio input from people talking, etc.
                             # Again, this might not be the best place for this...
-                            # self.listenForAudioInput()
+                            # self.listenForAudioInput(),
+
+
+                            self.test(),
+                            self.updateVariables()
                         )
                     ),
-                    limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
+                    # limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
+                    limit_period=0.05
                 ),
                 policy=owyl.PARALLEL_SUCCESS.REQUIRE_ALL
             )
         return owyl.visit(zenoTree, blackboard=self.blackboard)
 
-    def generateRandomInput(self):
-        self.randomInput = random.random()
+    def do_every(self, interval, worker_func, iterations=0):
+        if iterations != 1:
+            threading.Timer(interval, self.do_every, [interval, worker_func, 0 if iterations == 0 else iterations-1]).start()
+        worker_func()
 
     def actionToPhrase(self, commandName):
         for (key, keywords) in self.commandKeywords.iteritems():
@@ -613,25 +627,85 @@ class Tree:
                     return key
 
     def audioInputCallback(self, data):
-        # self.speechActive = data.data
-        audioTree = \
-            owyl.sequence(
-                self.isCommand(commandName=self.commandName),
-                owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
-            )
-        return owyl.visit(self.audioTree, blackboard=self.blackboard)
+        self.idleSince = 0
+        self.audioInputAge = 0
+        self.audioInput = data.data
 
     def isSpeakingCallback(self, data):
         self.speechActive = data.data
 
     def faceDetectCallback(self, data):
-        self.faceTargetPos = data.data
+        self.idleSince = 0
+        # Loop through each pair of the input coordinates
+        for person in range(len(data.positions)):
+            x = data.positions[person].x
+            y = data.positions[person].y
+            threshold = 100
+            max_num_people = 4
+            key_of_oldest = 0
+
+            # Indexes of person_detail:
+            index_person = 0
+            index_x = 1
+            index_y = 2
+            index_vel = 3
+            index_age = 4
+
+            # Create a new person if there is none in the system
+            if len(self.faceTarget) == 0:
+                self.faceTarget[0] = [Person(0), x, y, 0, 0]
+                return
+            # Loop through each of the people in faceTarget and compare
+            for (key, person_detail) in self.faceTarget.iteritems():
+                velocity = math.sqrt(math.pow(x - person_detail[index_x], 2) + math.pow(y - person_detail[index_y], 2))
+                # Find who is the oldest
+                if person_detail[index_age] > key_of_oldest:
+                    key_of_oldest = key
+                # If velocity < threshold = Same person
+                if velocity < threshold:
+                    self.faceTarget[key] = [person_detail[index_person], x, y, velocity, person_detail[index_age]]
+                    return
+            # If velocity > threshold = New person
+            if len(self.faceTarget) < max_num_people:
+                self.faceTarget[len(self.faceTarget) + 1] = [Person(len(self.faceTarget) + 1), x, y, 0, 0]
+            # Replace the oldest with the new one
+            else:
+                self.faceTarget[key_of_oldest] = [Person(key_of_oldest), x, y, 0, 0]
 
     def saliencyCallback(self, data):
-        self.saliencyTargetPos = data.data
+        self.idleSince = 0
+        self.saliencyTarget[0] = [Person(0), data.positions[0].x, data.positions[0].y, 0, 0]
 
     @owyl.taskmethod
-    def isIdle(self):
+    def test(self, **kwargs):
+        print "The tree is running..." + time.strftime("%Y%m%d%H%M%S")
+        # self.zenodial_listen_pub.publish("Testing 123 please work")
+        yield True
+
+    @owyl.taskmethod
+    def updateVariables(self, **kwargs):
+        # Indexes of person_detail:
+        index_person = 0
+        index_x = 1
+        index_y = 2
+        index_vel = 3
+        index_age = 4
+
+        self.randomInput = random.random()
+        self.idleSince += 1
+        for (key, person_detail) in self.faceTarget.iteritems():
+            self.faceTarget[key] = [person_detail[index_person], person_detail[index_x], person_detail[index_y], person_detail[index_vel], person_detail[index_age]+1]
+        for (key, person_detail) in self.saliencyTarget.iteritems():
+            self.saliencyTarget[key] = [person_detail[index_person], person_detail[index_x], person_detail[index_y], person_detail[index_vel], person_detail[index_age]+1]
+        self.audioInputAge += 1
+        self.rosInputAge += 1
+        self.emotionInputAge += 1
+        self.speechOutputAge += 1
+        self.animationOutputAge += 1
+        yield True
+
+    @owyl.taskmethod
+    def isIdle(self, **kwargs):
         # check if the robot has been idling for a certain period of time
         # idleSince should be increased once every 0.4 second or so
         if self.idleSince >= 50:
@@ -674,7 +748,6 @@ class Tree:
 
     @owyl.taskmethod
     def sayStartAction(self, **kwargs):
-        # self.itf_talk_pub.publish("I'll start " + kwargs["actionName"] + "...")
         self.robot.say("I'll start " + kwargs["actionName"] + "...")
         yield True
 
@@ -737,7 +810,7 @@ class Tree:
         eyeFree = kwargs["eyeFree"]
         neckFree = kwargs["neckFree"]
         rand = kwargs["rand"]
-        # TODO
+
 
     @owyl.taskmethod
     def isDefaultStance(self):
@@ -782,18 +855,23 @@ class Tree:
         yield True
 
     @owyl.taskmethod
-    def isSalientTarget(self):
-        # TODO
-        yield True
+    def hasSalientTarget(self):
+        if len(self.saliencyTarget) > 0:
+            yield True
+        else:
+            yield False
+
+    @owyl.taskmethod
+    def hasFaceTarget(self):
+        if len(self.faceTarget) > 0:
+            yield True
+        else:
+            yield False
 
     @owyl.taskmethod
     def isNotSameBrushStroke(self):
         # TODO
         yield True
-
-    def update(self, dt):
-        self.blackboard['dt'] = dt
-        self.tree.next()
 
 class TreeLayer(ScrollableLayer):
     is_event_handler = True
@@ -805,7 +883,6 @@ class TreeLayer(ScrollableLayer):
         self.manager.add(self)
         self.active = None
         self.tree = None
-        # self.blackboard = blackboard.Blackboard()
 
     def makeTree(self):
         self.tree = Tree(self.tree_name)
@@ -827,12 +904,7 @@ if __name__ == "__main__":
     # else:
     #     tree_name = "default:"
 
-    # Default: BasicZoidSteinTree / BasicZenoTree
-    # zoidsteniTree = Tree("BasicZoidSteinTree")
-    # zenoTree = Tree("BasicZenoTree")
-    # rospy.spin()
-
     tree_name = "BasicZenoTree"
-    director.init(resizable=True, caption="Owyl Behavior Tree Demo :" + tree_name, width=1024, height=768)
+    director.init(resizable=True, caption="Owyl Behavior Tree Demo :" + tree_name, width=1, height=1)
     s = Scene(TreeLayer(tree_name))
     director.run(s)
