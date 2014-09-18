@@ -393,13 +393,17 @@ class Tree:
                 # self.robot = Zeno()
                 self.robotName = "Zeno"
                 self.tree = self.makeBasicZenoTree()
-                self.do_every(0.01, self.tree.next)
+                # self.do_every(0.01, self.tree.next)
+                while True:
+                    self.tree.next()
                 break
             if case("BasicZoidSteinTree"):
                 self.robot = Zoidstein()
                 self.robotName = "Zoid"
                 self.tree = self.makeBasicZoidSteinTree()
-                self.do_every(0.01, self.tree.next)
+                # self.do_every(0.01, self.tree.next)
+                while True:
+                    self.tree.next()
                 break
             if case():
                 rospy.loginfo("Unrecognized Tree Name!\n")
@@ -486,7 +490,7 @@ class Tree:
                         ),
                         owyl.sequence(
                             self.isAudioInput(),
-                            self.toDialSystem()
+                            self.toDialSystem(utterance=self.audioInput)
                         )
                     )
                 ),
@@ -500,29 +504,15 @@ class Tree:
                 # owyl.visit(zoidSteinBodySubtree, blackboard=self.blackboard),
                 # owyl.visit(zoidSteinFaceSubtree, blackboard=self.blackboard),
 
-                ##### zoidSteinBodySubtree #####
+                ######################################## zoidSteinBodySubtree ########################################
                 owyl.limit(
                     owyl.repeatAlways(
                         owyl.selector(  # Select response to command or natural behavior
-                            owyl.sequence(  # If the last audio or blender input is a command, then select a response
-                                self.isCommand(commandName=self.audioInput),
-                                self.setVariable(var=self.bodyOrFace, value=self.UPPER_BODY),
-                                owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
-                            ),
-                            # It's not a command, so start checking for natural behaviors
-                            owyl.sequence(
-                                self.isNoSalientTarget(),
-                                self.isNoFaceTarget(),
-                                self.isNoAudioInput(),
-                                self.isNoRosInput(),
-                                self.isNoEmotionInput(),
-                                # There's nothing to do, so let's dance!
-                                # self.dance()
-                                # owyl.visit(zoidSteinBodyDance, blackboard=self.blackboard)
-                            )
+
                         )
                     ),
-                    limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
+                    # limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
+                    limit_period=0.05
                 ),
 
                 ##### zoidSteinFaceSubtree #####
@@ -554,7 +544,7 @@ class Tree:
                                 ),
                                 owyl.selector(
                                     owyl.sequence(
-                                        self.isCommand(commandName=self.audioInput),
+                                        self.isCommand(commandName="audioInput"),
                                         self.setVariable(var=self.commandInput, value=self.audioInput)
                                     ),
                                     owyl.sequence(
@@ -567,7 +557,7 @@ class Tree:
                             ),
                             owyl.sequence(
                                 self.isAudioInput(),
-                                self.toDialSystem()
+                                self.toDialSystem(utterance="audioInput")
                             )
                         )
                     ),
@@ -575,7 +565,7 @@ class Tree:
                     limit_period=0.05
                 ),
 
-                ##### General tree #####
+                ######################################## General tree ########################################
                 owyl.limit(
                     owyl.repeatAlways(
                         owyl.sequence(
@@ -705,7 +695,7 @@ class Tree:
                         ),
                         owyl.sequence(
                             self.isAudioInput(),
-                            self.toDialSystem()
+                            self.toDialSystem(utterance=self.audioInput)
                         )
                     )
                 ),
@@ -723,22 +713,7 @@ class Tree:
                 owyl.limit(
                     owyl.repeatAlways(
                         owyl.selector(  # Select response to command or natural behavior
-                            owyl.sequence(  # If the last audio or blender input is a command, then select a response
-                                self.isCommand(commandName=self.audioInput),
-                                self.setVariable(var=self.bodyOrFace, value=self.UPPER_BODY),
-                                owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
-                            ),
-                            # It's not a command, so start checking for natural behaviors
-                            owyl.sequence(
-                                self.isNoSalientTarget(),
-                                self.isNoFaceTarget(),
-                                self.isNoAudioInput(),
-                                self.isNoRosInput(),
-                                self.isNoEmotionInput(),
 
-                                # There's nothing to do, so let's paint!
-                                # owyl.visit(zenoBodyPaint, blackboard=self.blackboard)
-                            )
                         )
                     ),
                     # limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
@@ -789,7 +764,7 @@ class Tree:
                             ),
                             owyl.sequence(
                                 self.isAudioInput(),
-                                self.toDialSystem()
+                                self.toDialSystem(utterance="audioInput")
                             )
                         )
                     ),
@@ -820,20 +795,23 @@ class Tree:
             )
         return owyl.visit(zenoTree, blackboard=self.blackboard)
 
-    def do_every(self, interval, worker_func, iterations=0):
-        if iterations != 1:
-            threading.Timer(interval, self.do_every, [interval, worker_func, 0 if iterations == 0 else iterations-1]).start()
-        worker_func()
+    # def do_every(self, interval, worker_func, iterations=0):
+    #     if iterations != 1:
+    #         threading.Timer(interval, self.do_every, [interval, worker_func, 0 if iterations == 0 else iterations-1]).start()
+    #     worker_func()
 
     def actionToPhrase(self, commandName):
         for (key, keywords) in self.commandKeywords.iteritems():
             for word in keywords:
-                if commandName.find(word) > -1:
+                if commandName == word:
                     return key
 
     def audioInputCallback(self, data):
         self.audioInputAge = 0
+        # if not data.data == "":
         self.audioInput = data.data
+        self.blackboard["audioInput"] = data.data
+        print "Received = " + data.data
 
     def isSpeakingCallback(self, data):
         self.speechActive = data.data
@@ -880,7 +858,7 @@ class Tree:
 
     @owyl.taskmethod
     def test(self, **kwargs):
-        print "The tree is running..." + time.strftime("%Y%m%d%H%M%S")
+        # print "The tree is running..." + time.strftime("%Y%m%d%H%M%S")
         # self.zenodial_listen_pub.publish("Testing 123 please work")
         yield True
 
@@ -1074,20 +1052,27 @@ class Tree:
 
     @owyl.taskmethod
     def toDialSystem(self, **kwargs):
-        self.zenodial_listen_pub.publish(kwargs["utterance"])
+        utterance = self.blackboard.get(kwargs["utterance"])
+
+        print "Sending \"" + utterance + "\" to ZenoDial"
+        self.zenodial_listen_pub.publish(utterance)
         self.audioInput = ""
+        yield True
 
     @owyl.taskmethod
     def isCommand(self, **kwargs):
-        commandName = kwargs["commandName"]
+        commandName = self.blackboard.get(kwargs['commandName'])
+
         found = False
         for (key, keywords) in self.commandKeywords.iteritems():
             for word in keywords:
-                if commandName.find(word) > -1:
+                if commandName == word > -1:
                     found = True
                     self.audioInput = ""
+                    print self.audioInput + " is a command!"
                     yield True
         if not found:
+            print self.audioInput + " is not a command!"
             yield False
 
     @owyl.taskmethod
@@ -1139,6 +1124,7 @@ class Tree:
     @owyl.taskmethod
     def isAudioInput(self, **kwargs):
         if not self.audioInput == "":
+            print "isAudioInput = True (" + self.audioInput + ")"
             yield True
         else:
             yield False
