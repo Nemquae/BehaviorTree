@@ -90,6 +90,7 @@ class Tree:
     def __init__(self, tree_name):
         # self.BehaviorNode = rospy.init_node("behavior_tree")
         rospy.Subscriber("itf_listen", String, self.audioInputCallback)
+        rospy.Subscriber("zenodial_talk", String, self.zenoDialCallback)
         rospy.Subscriber("speech_active", Bool, self.isSpeakingCallback)
         rospy.Subscriber("facedetect", targets, self.faceDetectCallback)
         rospy.Subscriber("nmpt_saliency_point", targets, self.saliencyCallback)
@@ -426,7 +427,7 @@ class Tree:
                 owyl.repeatAlways(
                     owyl.selector(  # Select response to command or natural behavior
                         owyl.sequence(  # If the last audio or blender input is a command, then select a response
-                            self.isCommand(commandName=self.audioInput),
+                            self.isCommand(key="audioInput"),
                             self.setVariable(var=self.bodyOrFace, value="body"),
                             owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
                         ),
@@ -477,11 +478,11 @@ class Tree:
                             ),
                             owyl.selector(
                                 owyl.sequence(
-                                    self.isCommand(commandName=self.audioInput),
+                                    self.isCommand(key="audioInput"),
                                     self.setVariable(var=self.commandInput, value=self.audioInput)
                                 ),
                                 owyl.sequence(
-                                    self.isCommand(commandName=self.rosInput),
+                                    self.isCommand(key="rosInput"),
                                     self.setVariable(var=self.commandInput, value=self.rosInput)
                                 ),
                             ),
@@ -490,7 +491,7 @@ class Tree:
                         ),
                         owyl.sequence(
                             self.isAudioInput(),
-                            self.toDialSystem(utterance=self.audioInput)
+                            self.toDialSystem(key="audioInput")
                         )
                     )
                 ),
@@ -544,11 +545,11 @@ class Tree:
                                 ),
                                 owyl.selector(
                                     owyl.sequence(
-                                        self.isCommand(commandName="audioInput"),
+                                        self.isCommand(key="audioInput"),
                                         self.setVariable(var=self.commandInput, value=self.audioInput)
                                     ),
                                     owyl.sequence(
-                                        self.isCommand(commandName=self.rosInput),
+                                        self.isCommand(key="rosInput"),
                                         self.setVariable(var=self.commandInput, value=self.rosInput)
                                     ),
                                 ),
@@ -557,7 +558,7 @@ class Tree:
                             ),
                             owyl.sequence(
                                 self.isAudioInput(),
-                                self.toDialSystem(utterance="audioInput")
+                                self.toDialSystem(key="audioInput")
                             )
                         )
                     ),
@@ -628,7 +629,7 @@ class Tree:
                 owyl.repeatAlways(
                     owyl.selector(  # Select response to command or natural behavior
                         owyl.sequence(  # If the last audio or blender input is a command, then select a response
-                            self.isCommand(commandName=self.audioInput),
+                            self.isCommand(key="audioInput"),
                             self.setVariable(var=self.bodyOrFace, value=self.UPPER_BODY),
                             owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
                         ),
@@ -682,11 +683,11 @@ class Tree:
                             ),
                             owyl.selector(
                                 owyl.sequence(
-                                    self.isCommand(commandName=self.audioInput),
+                                    self.isCommand(key="audioInput"),
                                     self.setVariable(var=self.commandInput, value=self.audioInput)
                                 ),
                                 owyl.sequence(
-                                    self.isCommand(commandName=self.rosInput),
+                                    self.isCommand(key="rosInput"),
                                     self.setVariable(var=self.commandInput, value=self.rosInput)
                                 ),
                             ),
@@ -695,7 +696,7 @@ class Tree:
                         ),
                         owyl.sequence(
                             self.isAudioInput(),
-                            self.toDialSystem(utterance=self.audioInput)
+                            self.toDialSystem(key="audioInput")
                         )
                     )
                 ),
@@ -751,11 +752,11 @@ class Tree:
                                 ),
                                 owyl.selector(
                                     owyl.sequence(
-                                        self.isCommand(commandName=self.audioInput),
+                                        self.isCommand(key="audioInput"),
                                         self.setVariable(var=self.commandInput, value=self.audioInput)
                                     ),
                                     owyl.sequence(
-                                        self.isCommand(commandName=self.rosInput),
+                                        self.isCommand(key="rosInput"),
                                         self.setVariable(var=self.commandInput, value=self.rosInput)
                                     ),
                                 ),
@@ -764,7 +765,7 @@ class Tree:
                             ),
                             owyl.sequence(
                                 self.isAudioInput(),
-                                self.toDialSystem(utterance="audioInput")
+                                self.toDialSystem(key="audioInput")
                             )
                         )
                     ),
@@ -806,12 +807,16 @@ class Tree:
                 if commandName == word:
                     return key
 
+    def zenoDialCallback(self, data):
+        print "(From ZenoDial) " + data.data
+        self.robot.say(data.data)
+
     def audioInputCallback(self, data):
         self.audioInputAge = 0
         # if not data.data == "":
         self.audioInput = data.data
         self.blackboard["audioInput"] = data.data
-        print "Received = " + data.data
+        print "(From itf_listen) " + data.data
 
     def isSpeakingCallback(self, data):
         self.speechActive = data.data
@@ -824,6 +829,8 @@ class Tree:
             threshold = 100
             max_num_people = 4
             key_of_oldest = 0
+            key_of_closest = 0
+            min_velocity = -1
 
             # Indexes of person_detail:
             index_person = 0
@@ -836,16 +843,25 @@ class Tree:
             if len(self.faceTarget) == 0:
                 self.faceTarget[0] = [Person(0), x, y, 0, 0]
                 return
+
             # Loop through each of the people in faceTarget and compare
             for (key, person_detail) in self.faceTarget.iteritems():
                 velocity = math.sqrt(math.pow(x - person_detail[index_x], 2) + math.pow(y - person_detail[index_y], 2))
-                # Find who is the oldest
+
+                # Keep track of the oldest
                 if person_detail[index_age] > key_of_oldest:
                     key_of_oldest = key
-                # If velocity < threshold = Same person
-                if velocity < threshold:
-                    self.faceTarget[key] = [person_detail[index_person], x, y, velocity, person_detail[index_age]]
-                    return
+
+                # Keep track of the closest
+                if velocity < threshold and (velocity < min_velocity or min_velocity < 0):
+                    min_velocity = velocity
+                    key_of_closest = key
+
+            # If velocity < threshold = Same person
+            if min_velocity >= 0:
+                self.faceTarget[key_of_closest] = [self.faceTarget.get(key_of_closest)[index_person], x, y, min_velocity, self.faceTarget.get(key_of_closest)[index_age]]
+                return
+
             # If velocity > threshold = New person
             if len(self.faceTarget) < max_num_people:
                 self.faceTarget[len(self.faceTarget) + 1] = [Person(len(self.faceTarget) + 1), x, y, 0, 0]
@@ -1052,7 +1068,7 @@ class Tree:
 
     @owyl.taskmethod
     def toDialSystem(self, **kwargs):
-        utterance = self.blackboard.get(kwargs["utterance"])
+        utterance = self.blackboard.get(kwargs["key"])
 
         print "Sending \"" + utterance + "\" to ZenoDial"
         self.zenodial_listen_pub.publish(utterance)
@@ -1061,7 +1077,7 @@ class Tree:
 
     @owyl.taskmethod
     def isCommand(self, **kwargs):
-        commandName = self.blackboard.get(kwargs['commandName'])
+        commandName = self.blackboard.get(kwargs['key'])
 
         found = False
         for (key, keywords) in self.commandKeywords.iteritems():
@@ -1069,10 +1085,8 @@ class Tree:
                 if commandName == word > -1:
                     found = True
                     self.audioInput = ""
-                    print self.audioInput + " is a command!"
                     yield True
         if not found:
-            print self.audioInput + " is not a command!"
             yield False
 
     @owyl.taskmethod
@@ -1124,7 +1138,6 @@ class Tree:
     @owyl.taskmethod
     def isAudioInput(self, **kwargs):
         if not self.audioInput == "":
-            print "isAudioInput = True (" + self.audioInput + ")"
             yield True
         else:
             yield False
