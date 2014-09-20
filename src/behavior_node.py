@@ -1,67 +1,59 @@
-
-
 __author__ = 'lake'
 __revision__ = 0.1
 __date__ = "$Date$"[7:-2]
 
 ''' ====================== To be removed ======================  '''
-import memojito
-import pyglet
-from operator import attrgetter
-getX = attrgetter('x')
-getY = attrgetter('y')
-getR = attrgetter('rotation')
-pyglet.resource.reindex()
-from cocos.director import director
-from cocos.scene import Scene
-from cocos.actions import FadeIn
-from cocos.layer import ScrollableLayer, ScrollingManager
-from rabbyt.collisions import collide_single
-from steering import Steerable
-from math import radians, degrees, sin, cos, pi, atan2
-pi_2 = pi*2.0
-pi_1_2 = pi/2.0
-pi_1_4 = pi/4.0
-pi_3_4 = (pi*3)/4
+# import memojito
+# import pyglet
+# from operator import attrgetter
+# getX = attrgetter('x')
+# getY = attrgetter('y')
+# getR = attrgetter('rotation')
+# pyglet.resource.reindex()
+# from cocos.actions import FadeIn
+# from rabbyt.collisions import collide_single
+# from steering import Steerable
+# from math import radians, degrees, sin, cos, pi, atan2
+# pi_2 = pi*2.0
+# pi_1_2 = pi/2.0
+# pi_1_4 = pi/4.0
+# pi_3_4 = (pi*3)/4
+# from geometry_msgs.msg import Point
+# import numpy
+# from numpy import linalg
+# from sound_play.libsoundplay import SoundClient
+# from std_msgs.msg import Header
+# from sensor_msgs.msg import PointCloud2
+# import threading
+# import tf
+# import socket
+# import subprocess
+# import re
+# import sys
 ''' ======================  To be removed ======================  '''
-
-
 
 
 import roslib
 import rospy
-import numpy
 import math
 import os
-import subprocess
-import re
 import time
-import tf
-import socket
 import std_msgs
-import threading
+import random
+import owyl
 
 # Jamie's API
 from hri_api.entities import Person, World, Saliency
 from zoidstein_hri.zoidstein import Zoidstein, ZoidExpression, ZoidGestureData
 from hri_api.query import Query
 
-import sys
-import random
-
-import owyl
-
-from numpy import linalg
-
-## Owyl provides the wisdom
+from cocos.director import director
+from cocos.scene import Scene
+from cocos.layer import ScrollableLayer, ScrollingManager
 from owyl import blackboard
-
-from geometry_msgs.msg import Point
 from simple_face_tracker.msg import targets
 from std_msgs.msg import String, Bool
-from sound_play.libsoundplay import SoundClient
-from std_msgs.msg import Header
-from sensor_msgs.msg import PointCloud2
+
 
 class switch(object):
     def __init__(self, value):
@@ -166,42 +158,13 @@ class Tree:
         self.blackboard["actionName"] = ""
         self.blackboard["bodyOrFace"] = ""
         self.blackboard["targetPos"] = ""
-        self.blackboard["glanceOrSaccadeTargetPos"] = {}
+        self.blackboard["glanceOrSaccadeTargetPos"] = ""
         self.blackboard["firstGreeting"] = False
         self.blackboard["speechActive"] = False
         self.blackboard["robotName"] = ""
 
 
         ### Subtrees
-        ## Blink Subtree. A small example of a tree to run in parallel with the other subtrees.
-        # Assumes randomInput is recalculated each frame
-        self.blinkSubtree = \
-            owyl.limit(
-                owyl.repeatAlways(
-                    owyl.selector(
-                        owyl.sequence(
-                            self.isSwitchingTarget(),
-                            self.isLess(num1="randomInput", num2="blinkChance1.5"),  # blink 50% more often when switching targets
-                            self.blink()
-                        ),
-                        owyl.sequence(
-                            owyl.selector(
-                                # self.isGreater(num1=linalg.norm(self.bodyTargetVel), num2=1),
-                                self.isSpeaking()
-                            ),
-                            self.isLess(num1="randomInput", num2="blinkChance1.2"),
-                            self.blink()
-                        ),
-                        owyl.sequence(
-                            self.isLess(num1="randomInput", num2="blinkChance"),
-                            self.blink()
-                        )
-                    )
-                ),
-                # limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
-                limit_period=0.05
-            )
-
         ## Announce the action we're about to take and then reset the robot to a default stance.
         # Though we announce an action, this tree doesn't execute the action.
         # Assumes actionName has been set
@@ -346,10 +309,12 @@ class Tree:
             owyl.selector(
                 owyl.sequence(
                     self.isGreater(num1="randomInput", num2=0.5),
-                    self.faceTrack(pos="glanceOrSaccadeTargetPos", eyeFree="eyeFree0.25", neckFree="neckFree0.1", rand="randomInput")
+                    # self.faceTrack(pos="glanceOrSaccadeTargetPos", eyeFree="eyeFree0.25", neckFree="neckFree0.1", rand="randomInput")
+                    self.faceTrack(eyeFree="eyeFree0.25", neckFree="neckFree0.1", rand="randomInput")
                 ),
                 owyl.sequence(
-                    self.faceTrack(pos="glanceOrSaccadeTargetPos", eyeFree="eyeFree0.75", neckFree="neckFree0.3", rand="randomInput")
+                    # self.faceTrack(pos="glanceOrSaccadeTargetPos", eyeFree="eyeFree0.75", neckFree="neckFree0.3", rand="randomInput")
+                    self.faceTrack(eyeFree="eyeFree0.75", neckFree="neckFree0.3", rand="randomInput")
                 )
             )
 
@@ -363,14 +328,16 @@ class Tree:
                         # self.isLess(num1=self.faceTargetAge, num2=1),
                         self.isLess(num1="randomInput", num2=0.0025)
                     ),
-                    self.faceTrack(pos="glanceOrSaccadeTargetPos", eyeFree="eyeFreedom", neckFree="neckFreedom", rand="randomInput2.5")
+                    # self.faceTrack(pos="glanceOrSaccadeTargetPos", eyeFree="eyeFreedom", neckFree="neckFreedom", rand="randomInput2.5")
+                    self.faceTrack(eyeFree="eyeFreedom", neckFree="neckFreedom", rand="randomInput2.5")
                 ),
                 owyl.sequence(
                     owyl.selector(
                         self.isLess(num1="saliencyTargetAge", num2=1),
                         self.isLess(num1="randomInput", num2=0.0025)
                     ),
-                    self.faceTrack(pos="glanceOrSaccadeTargetPos", eyeFree="eyeFreedom", neckFree="neckFreedom", rand="randomInput2.5")
+                    # self.faceTrack(pos="glanceOrSaccadeTargetPos", eyeFree="eyeFreedom", neckFree="neckFreedom", rand="randomInput2.5")
+                    self.faceTrack(eyeFree="eyeFreedom", neckFree="neckFreedom", rand="randomInput2.5")
                 )
             )
 
@@ -460,7 +427,7 @@ class Tree:
         """
         for case in switch(tree_name):
             if case("BasicZenoTree"):
-                self.blackboard["robot"] = Zeno()
+                # self.blackboard["robot"] = Zeno()
                 self.blackboard["robotName"] = "Zeno"
                 self.tree = self.makeBasicZenoTree()
                 while True:
@@ -514,7 +481,7 @@ class Tree:
                         )
                     ),
                     # limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
-                    limit_period=0.05
+                    limit_period=0.01
                 ),
 
                 ##### zoidSteinFaceSubtree #####
@@ -533,7 +500,7 @@ class Tree:
                             ),
                             owyl.sequence(
                                 self.isSalientTarget(),
-                                self.isNoFaceTarget(),
+                                # self.isNoFaceTarget(),  # TODO: May have face targets in the system when a salient target comes out?
                                 self.isNoAudioInput(),
                                 self.isNoRosInput(),
                                 self.isNoEmotionInput(),
@@ -570,7 +537,7 @@ class Tree:
                         )
                     ),
                     # limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
-                    limit_period=0.05
+                    limit_period=0.01
                 ),
 
                 ######################################## General tree ########################################
@@ -582,13 +549,18 @@ class Tree:
                         )
                     ),
                     # limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
-                    limit_period=0.05
+                    limit_period=0.01
                 ),
                 policy=owyl.PARALLEL_SUCCESS.REQUIRE_ALL
             )
         return owyl.visit(zoidSteinTree, blackboard=self.blackboard)
 
     def makeBasicZenoTree(self):
+        ## Blink Subtree. A small example of a tree to run in parallel with the other subtrees.
+        # Assumes randomInput is recalculated each frame
+        # blinkSubtree = \
+        # Temp moved to the zeno root tree
+
         ## Zeno's Body Paint subtree
         zenoBodyPaint = \
             owyl.selector(
@@ -638,6 +610,33 @@ class Tree:
                 # owyl.visit(zenoBodySubtree, blackboard=self.blackboard),
                 # owyl.visit(zenoFaceSubtree, blackboard=self.blackboard),
 
+                ##### Blink Subtree #####
+                owyl.limit(
+                    owyl.repeatAlways(
+                        owyl.selector(
+                            owyl.sequence(
+                                self.isSwitchingTarget(),
+                                self.isLess(num1="randomInput", num2="blinkChance1.5"),  # blink 50% more often when switching targets
+                                self.blink()
+                            ),
+                            owyl.sequence(
+                                owyl.selector(
+                                    # self.isGreater(num1=linalg.norm(self.bodyTargetVel), num2=1),
+                                    self.isSpeaking()
+                                ),
+                                self.isLess(num1="randomInput", num2="blinkChance1.2"),
+                                self.blink()
+                            ),
+                            owyl.sequence(
+                                self.isLess(num1="randomInput", num2="blinkChance"),
+                                self.blink()
+                            )
+                        )
+                    ),
+                    # limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
+                    limit_period=0.01
+                ),
+
                 ##### zenoBodySubtree #####
                 owyl.limit(
                     owyl.repeatAlways(
@@ -662,7 +661,7 @@ class Tree:
                         )
                     ),
                     # limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
-                    limit_period=0.05
+                    limit_period=0.01
                 ),
 
                 ##### zenoFaceSubtree #####
@@ -681,7 +680,7 @@ class Tree:
                             ),
                             owyl.sequence(
                                 self.isSalientTarget(),
-                                self.isNoFaceTarget(),
+                                # self.isNoFaceTarget(),  # TODO: May have face targets in the system when a salient target comes out?
                                 self.isNoAudioInput(),
                                 self.isNoRosInput(),
                                 self.isNoEmotionInput(),
@@ -718,7 +717,7 @@ class Tree:
                         )
                     ),
                     # limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
-                    limit_period=0.05
+                    limit_period=0.01
                 ),
 
                 ##### General tree #####
@@ -730,7 +729,7 @@ class Tree:
                         )
                     ),
                     # limit_period=0.4  # Yield to the other behaviors after every 400 milliseconds of processing
-                    limit_period=0.05  # Testing
+                    limit_period=0.01
                 ),
                 policy=owyl.PARALLEL_SUCCESS.REQUIRE_ALL
             )
@@ -793,19 +792,22 @@ class Tree:
         self.blackboard["emotionInputAge"] = 0
         self.blackboard["emotionInput"] = data.data
 
-    def determineCurrentTarget(self):
+    def getTheYoungestPerson(self):
         youngest_age = -1
         youngest_person = ""
         for (key, person_detail) in self.blackboard["faceTarget"].iteritems():
             if youngest_age < 0 or person_detail[4] < youngest_age:
                 youngest_age = person_detail[4]  # person_detail[4] = age
                 youngest_person = person_detail[0]  # person_detail[0] = person object
-        self.blackboard["targetPos"] = youngest_person
+        return youngest_person
+
+    def determineCurrentTarget(self):
+        self.blackboard["targetPos"] = self.getTheYoungestPerson()
         # print str(len(self.blackboard["faceTarget"])) + " - In current target function: " + str(youngest_age)
 
     def removeFace(self):
         # print "Looking for faces to remove"
-        disappear_threshold = 6
+        disappear_threshold = 15
         people_to_del = []
         for (key, person_detail) in self.blackboard["faceTarget"].iteritems():
             if person_detail[5] > disappear_threshold:  # person_detail[5] = disappear_age
@@ -843,11 +845,20 @@ class Tree:
             self.blackboard["faceTarget"][key] = [person_detail[index_person], person_detail[index_x], person_detail[index_y], person_detail[index_vel], person_detail[index_age]+1, person_detail[index_dage]+1]
         for (key, person_detail) in self.blackboard["saliencyTarget"].iteritems():
             self.blackboard["saliencyTarget"][key] = [person_detail[index_person], person_detail[index_x], person_detail[index_y], person_detail[index_vel], person_detail[index_age]+1, person_detail[index_dage]+1]
-        self.blackboard["audioInputAge"] = int(self.blackboard["audioInputAge"]) + 1
-        self.blackboard["rosInputAge"] = int(self.blackboard["rosInputAge"]) + 1
-        self.blackboard["emotionInputAge"] = int(self.blackboard["emotionInputAge"]) + 1
-        self.blackboard["speechOutputAge"] = int(self.blackboard["speechOutputAge"]) + 1
+        self.blackboard["audioInputAge"] += 1
+        self.blackboard["rosInputAge"] += 1
+        self.blackboard["emotionInputAge"] += 1
+        self.blackboard["speechOutputAge"] += 1
         # self.blackboard["animationOutputAge"] = int(self.blackboard["animationOutputAge"]) + 1
+
+        self.blackboard["eyeFree0.25"] = self.blackboard["randomInput"] * 0.25 * self.blackboard["eyeFreedom"]
+        self.blackboard["eyeFree0.75"] = self.blackboard["randomInput"] * 0.75 * self.blackboard["eyeFreedom"]
+        self.blackboard["neckFree0.1"] = self.blackboard["randomInput"] * 0.1 * self.blackboard["neckFreedom"]
+        self.blackboard["neckFree0.3"] = self.blackboard["randomInput"] * 0.3 * self.blackboard["neckFreedom"]
+        self.blackboard["blinkChance1.5"] = self.blackboard["blinkChance"] * 1.5
+        self.blackboard["blinkChance1.2"] = self.blackboard["blinkChance"] * 1.2
+        self.blackboard["randomInput2.5"] = self.blackboard["randomInput"] * 2.5
+
         self.determineCurrentTarget()
         self.removeFace()
         yield True
@@ -889,7 +900,7 @@ class Tree:
 
     @owyl.taskmethod
     def blink(self):
-        # TODO
+        # TODO: To be confirmed for the blink command/topic
         yield True
 
     @owyl.taskmethod
@@ -1004,20 +1015,17 @@ class Tree:
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.Stop)
 
-        # elif self.commandName == "Stop":
-            # TODO: Stop and reset all the body movements, if it is practically possible
-
         yield True
 
     @owyl.taskmethod
     def faceTrack(self, **kwargs):
-        pos = kwargs["pos"]
-        eyeFree = kwargs["eyeFree"]
-        neckFree = kwargs["neckFree"]
-        rand = kwargs["rand"]
-        # TODO: Maybe this will just be a normal function that do something like these:
-        # TODO: change "targetPos" form time to time
-        # TODO: do a robot.gaze_and_wait(person, speed)...
+        # Should be identical to faceGaze() if both of the functions use the youngest person as the target
+        personToTrack = self.getTheYoungestPerson()
+        self.blackboard["robot"].gaze_and_wait(personToTrack.head, speed=0.5)
+
+        eyeFree = self.blackboard[kwargs["eyeFree"]]
+        neckFree = self.blackboard[kwargs["neckFree"]]
+        rand = self.blackboard[kwargs["rand"]]
         yield True
 
     @owyl.taskmethod
