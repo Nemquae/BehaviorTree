@@ -158,6 +158,7 @@ class Tree:
         self.blackboard["neckFree0.3"] = self.blackboard["randomInput"] * 0.3 * self.blackboard["neckFreedom"]
         self.blackboard["boolean_true"] = True
         self.blackboard["boolean_false"] = False
+        self.blackboard["null"] = ""
 
         ### Locals
         self.blackboard["commandName"] = ""
@@ -417,34 +418,40 @@ class Tree:
             )
 
         ## To check the emotion inputs from OpenEar
-        self.checkEmotion = \
+        self.askEmotion = \
             owyl.selector(
                 owyl.sequence(
                     self.isVariable(var="emotionInput", value="agressiv"),
-                    self.say(utterance="Please don't be aggressive")
+                    self.say(utterance="Please don't be aggressive"),
+                    self.setVariable(var="emotionInput", value="null")
                 ),
                 owyl.sequence(
                     owyl.selector(
                         self.isVariable(var="emotionInput", value="cheerful"),
                         self.isVariable(var="emotionInput", value="interested"),
                     ),
-                    self.say(utterance="Hey you sound cheerful!")
+                    self.say(utterance="Hey you sound cheerful!"),
+                    self.setVariable(var="emotionInput", value="null")
                 ),
                 owyl.sequence(
                     self.isVariable(var="emotionInput", value="intoxicated"),
-                    self.say(utterance="You sound intoxicated, why?")
+                    self.say(utterance="You sound intoxicated, why?"),
+                    self.setVariable(var="emotionInput", value="null")
                 ),
                 owyl.sequence(
                     self.isVariable(var="emotionInput", value="intoxicated"),
-                    self.say(utterance="You sound nervous, why?")
+                    self.say(utterance="You sound nervous, why?"),
+                    self.setVariable(var="emotionInput", value="null")
                 ),
                 owyl.sequence(
                     self.isVariable(var="emotionInput", value="intoxicated"),
-                    self.say(utterance="You sound tired, why?")
+                    self.say(utterance="You sound tired, why?"),
+                    self.setVariable(var="emotionInput", value="null")
                 ),
                 owyl.sequence(
                     self.isVariable(var="emotionInput", value="intoxicated"),
-                    self.say(utterance="You sound bored, why?")
+                    self.say(utterance="You sound bored, why?"),
+                    self.setVariable(var="emotionInput", value="null")
                 )
             )
 
@@ -554,7 +561,7 @@ class Tree:
                             ),
                             owyl.sequence(
                                 self.isLess(num1="randomInput", num2=0.5),
-                                self.checkEmotion()
+                                self.askEmotion()
                             ),
                             owyl.sequence(
                                 self.isAudioInput(),
@@ -702,7 +709,7 @@ class Tree:
                             ),
                             owyl.sequence(
                                 self.isLess(num1="randomInput", num2=0.5),
-                                self.checkEmotion()
+                                self.askEmotion()
                             ),
                             owyl.sequence(
                                 self.isAudioInput(),
@@ -737,8 +744,6 @@ class Tree:
 
     def audioInputCallback(self, data):
         self.blackboard["audioInputAge"] = 0
-        # if not data.data == "":
-        # self.audioInput = data.data
         self.blackboard["audioInput"] = data.data
         print "(From itf_listen) " + data.data
 
@@ -749,10 +754,6 @@ class Tree:
         # Loop through each pair of the input coordinates
         person_id = 0
         threshold = 100
-        max_num_people = 4
-        key_of_oldest = 0
-        key_of_closest = 0
-        min_velocity = -1
 
         # Indexes of person_detail:
         index_person = 0
@@ -800,10 +801,11 @@ class Tree:
                 youngest_age = person_detail[4]  # person_detail[4] = age
                 youngest_person = person_detail[0]  # person_detail[0] = person object
         self.blackboard["targetPos"] = youngest_person
+        # print str(len(self.blackboard["faceTarget"])) + " - In current target function: " + str(youngest_age)
 
     def removeFace(self):
         # print "Looking for faces to remove"
-        disappear_threshold = 8
+        disappear_threshold = 6
         people_to_del = []
         for (key, person_detail) in self.blackboard["faceTarget"].iteritems():
             if person_detail[5] > disappear_threshold:  # person_detail[5] = disappear_age
@@ -1003,7 +1005,7 @@ class Tree:
                 self.blackboard["robot"].gesture(ZenoGestureData.Stop)
 
         # elif self.commandName == "Stop":
-            # TODO: Stop and reset all the body movements
+            # TODO: Stop and reset all the body movements, if it is practically possible
 
         yield True
 
@@ -1013,25 +1015,26 @@ class Tree:
         eyeFree = kwargs["eyeFree"]
         neckFree = kwargs["neckFree"]
         rand = kwargs["rand"]
+        # TODO: Maybe this will just be a normal function that do something like these:
+        # TODO: change "targetPos" form time to time
+        # TODO: do a robot.gaze_and_wait(person, speed)...
         yield True
 
     @owyl.taskmethod
     def faceGaze(self, **kwargs):
         # self.blackboard["robot"].gaze_and_wait(self.blackboard["targetPos"].head, speed=0.5)
+        self.blackboard["targetPos"] = ""
+        self.blackboard["saliencyTarget"] = {}
         yield True
 
     @owyl.taskmethod
     def isDefaultStance(self):
-        # TODO
+        # TODO: Need to confirm if there is a default stance or a way to do so
         yield True
 
     @owyl.taskmethod
     def resetToDefaultStance(self):
-        self.blackboard["robot"].show_expression_and_wait(1, 0.0)
-        self.blackboard["robot"].show_expression_and_wait(2, 0.0)
-        self.blackboard["robot"].show_expression_and_wait(3, 0.0)
-        self.blackboard["robot"].show_expression_and_wait(4, 0.0)
-        # TODO: Reset other body parts
+        # TODO: Need to confirm if there is a default stance or a way to do so
         yield True
 
     @owyl.taskmethod
@@ -1041,6 +1044,7 @@ class Tree:
         print "Sending \"" + utterance + "\" to ZenoDial"
         self.zenodial_listen_pub.publish(utterance)
         self.blackboard["audioInput"] = ""
+        self.blackboard["emotionInput"] = ""
         yield True
 
     @owyl.taskmethod
@@ -1053,6 +1057,7 @@ class Tree:
                 if commandName == word > -1:
                     found = True
                     self.blackboard["audioInput"] = ""
+                    self.blackboard["emotionInput"] = ""
                     yield True
         if not found:
             yield False
