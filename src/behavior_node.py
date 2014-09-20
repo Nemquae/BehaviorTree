@@ -91,6 +91,8 @@ class Tree:
         rospy.Subscriber("speech_active", Bool, self.isSpeakingCallback)
         rospy.Subscriber("facedetect", targets, self.faceDetectCallback)
         rospy.Subscriber("/nmpt_saliency_point", targets, self.saliencyCallback)
+        rospy.Subscriber("emo_pub", String, self.emotionCallback)
+        rospy.Subscriber("affect_pub", String, self.emotionCallback)
         self.itf_talk_pub = rospy.Publisher("itf_talk", String, queue_size=1)
         self.zenodial_listen_pub = rospy.Publisher("zenodial_listen", String, queue_size=1)
         self.robot_movement_pub = rospy.Publisher("robot_movement", String, queue_size=1)
@@ -412,7 +414,38 @@ class Tree:
                     # self.showAction(action="Happy", part=self.UPPER_BODY),
                     # self.showAction(action="Happy", part=self.HEAD_NECK)
                 )
-                # TODO: Do we have to mimic all the emotionInput or just happy?
+            )
+
+        ## To check the emotion inputs from OpenEar
+        self.checkEmotion = \
+            owyl.selector(
+                owyl.sequence(
+                    self.isVariable(var="emotionInput", value="agressiv"),
+                    self.say(utterance="Please don't be aggressive")
+                ),
+                owyl.sequence(
+                    owyl.selector(
+                        self.isVariable(var="emotionInput", value="cheerful"),
+                        self.isVariable(var="emotionInput", value="interested"),
+                    ),
+                    self.say(utterance="Hey you sound cheerful!")
+                ),
+                owyl.sequence(
+                    self.isVariable(var="emotionInput", value="intoxicated"),
+                    self.say(utterance="You sound intoxicated, why?")
+                ),
+                owyl.sequence(
+                    self.isVariable(var="emotionInput", value="intoxicated"),
+                    self.say(utterance="You sound nervous, why?")
+                ),
+                owyl.sequence(
+                    self.isVariable(var="emotionInput", value="intoxicated"),
+                    self.say(utterance="You sound tired, why?")
+                ),
+                owyl.sequence(
+                    self.isVariable(var="emotionInput", value="intoxicated"),
+                    self.say(utterance="You sound bored, why?")
+                )
             )
 
         """
@@ -423,7 +456,6 @@ class Tree:
                 self.blackboard["robot"] = Zeno()
                 self.blackboard["robotName"] = "Zeno"
                 self.tree = self.makeBasicZenoTree()
-                # self.do_every(0.01, self.tree.next)
                 while True:
                     self.tree.next()
                 break
@@ -431,7 +463,6 @@ class Tree:
                 self.blackboard["robot"] = Zoidstein()
                 self.blackboard["robotName"] = "Zoid"
                 self.tree = self.makeBasicZoidSteinTree()
-                # self.do_every(0.01, self.tree.next)
                 while True:
                     self.tree.next()
                 break
@@ -490,7 +521,8 @@ class Tree:
                                 self.isNoRosInput(),
                                 self.isNoEmotionInput(),
 
-                                owyl.visit(self.faceGaze, blackboard=self.blackboard)
+                                self.faceGaze()
+                                # owyl.visit(self.faceGaze, blackboard=self.blackboard)
                             ),
                             owyl.sequence(
                                 self.isSalientTarget(),
@@ -499,7 +531,8 @@ class Tree:
                                 self.isNoRosInput(),
                                 self.isNoEmotionInput(),
 
-                                owyl.visit(self.faceGaze, blackboard=self.blackboard)
+                                self.faceGaze()
+                                # owyl.visit(self.faceGaze, blackboard=self.blackboard)
                             ),
                             owyl.sequence(
                                 owyl.selector(
@@ -520,8 +553,12 @@ class Tree:
                                 owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
                             ),
                             owyl.sequence(
+                                self.isLess(num1="randomInput", num2=0.5),
+                                self.checkEmotion()
+                            ),
+                            owyl.sequence(
                                 self.isAudioInput(),
-                                self.toDialSystem(key="audioInput")
+                                self.toZenoDial(key="audioInput")
                             )
                         )
                     ),
@@ -533,14 +570,6 @@ class Tree:
                 owyl.limit(
                     owyl.repeatAlways(
                         owyl.sequence(
-                            # Poll for input coming from blender, for example buttons to stop movement, etc.
-                            # May move this logic out of the behavior tree...
-                            # self.pollForBlenderInput(),
-
-                            # Listen for audio input from people talking, etc.
-                            # Again, this might not be the best place for this...
-                            # self.listenForAudioInput()
-
                             self.test(),
                             self.updateVariables()
                         )
@@ -672,8 +701,12 @@ class Tree:
                                 owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
                             ),
                             owyl.sequence(
+                                self.isLess(num1="randomInput", num2=0.5),
+                                self.checkEmotion()
+                            ),
+                            owyl.sequence(
                                 self.isAudioInput(),
-                                self.toDialSystem(key="audioInput")
+                                self.toZenoDial(key="audioInput")
                             )
                         )
                     ),
@@ -685,14 +718,6 @@ class Tree:
                 owyl.limit(
                     owyl.repeatAlways(
                         owyl.sequence(
-                            # Poll for input coming from blender, for example buttons to stop movement, etc.
-                            # May move this logic out of the behavior tree...
-                            # self.pollForBlenderInput(),
-
-                            # Listen for audio input from people talking, etc.
-                            # Again, this might not be the best place for this...
-                            # self.listenForAudioInput(),
-
                             self.test(),
                             self.updateVariables()
                         )
@@ -703,11 +728,6 @@ class Tree:
                 policy=owyl.PARALLEL_SUCCESS.REQUIRE_ALL
             )
         return owyl.visit(zenoTree, blackboard=self.blackboard)
-
-    # def do_every(self, interval, worker_func, iterations=0):
-    #     if iterations != 1:
-    #         threading.Timer(interval, self.do_every, [interval, worker_func, 0 if iterations == 0 else iterations-1]).start()
-    #     worker_func()
 
     def zenoDialCallback(self, data):
         print "(From ZenoDial) " + data.data
@@ -746,11 +766,9 @@ class Tree:
         for person in range(len(data.positions)):
             x = data.positions[person].x
             y = data.positions[person].y
-            print "Person " + str(person_id) + " (" + str(x) + ", " + str(y) + "), Length = " + str(len(self.blackboard["faceTarget"]))
 
             # Create a new person if there is none in the system
-            # if len(self.blackboard["faceTarget"]) == person_id:
-            if len(self.blackboard["faceTarget"]) == 0:
+            if len(self.blackboard["faceTarget"]) == person_id:
                 self.blackboard["faceTarget"][person_id] = [Person(person_id), x, y, 0, 0, 0]
                 print "New Person(" + str(person_id) + ")"
                 person_id += 1
@@ -761,50 +779,18 @@ class Tree:
             # Same Person, update his coordinates
             if velocity < threshold:
                 self.blackboard["faceTarget"][person_id] = [self.blackboard["faceTarget"][person_id][index_person], x, y, velocity, self.blackboard["faceTarget"][person_id][index_age], 0]
-                # print "Same Person" + " (" + str(velocity) + ")"
-            # # He is gone
-            # else:
-            #     self.blackboard["faceTarget"][person_id] = [self.blackboard["faceTarget"][person_id][index_person], x, y, velocity, self.blackboard["faceTarget"][person_id][index_age], self.blackboard["faceTarget"][person_id][index_dage] + 1]
-            #     print "Missing Person(" + person_id + ")"
 
             person_id += 1
-
-        # if no. of people in the system > no. of input coordinates
-        # if len(self.blackboard["faceTarget"]) > person_id:
-        #     for person_id in range(len(self.blackboard["faceTarget"])):
-        #         self.blackboard["faceTarget"][person_id] = [self.blackboard["faceTarget"][person_id][index_person], self.blackboard["faceTarget"][person_id][index_x], self.blackboard["faceTarget"][person_id][index_y], self.blackboard["faceTarget"][person_id][index_vel], self.blackboard["faceTarget"][person_id][index_age], self.blackboard["faceTarget"][person_id][index_dage] + 1]
-        #         print "Missing Person(" + person_id + ")!"
-
-            # # Loop through each of the people in faceTarget and compare
-            # for (key, person_detail) in self.blackboard["faceTarget"].iteritems():
-            #     velocity = math.sqrt(math.pow(x - person_detail[index_x], 2) + math.pow(y - person_detail[index_y], 2))
-            #
-            #     # Keep track of the oldest
-            #     if person_detail[index_age] > key_of_oldest:
-            #         key_of_oldest = key
-            #
-            #     # Keep track of the closest
-            #     if velocity < threshold and (velocity < min_velocity or min_velocity < 0):
-            #         min_velocity = velocity
-            #         key_of_closest = key
-            #
-            # # If velocity < threshold = Same person
-            # if min_velocity >= 0:
-            #     self.blackboard["faceTarget"][key_of_closest] = [self.blackboard["faceTarget"][key_of_closest][index_person], x, y, min_velocity, self.blackboard["faceTarget"][key_of_closest][index_age], 0]
-            #     continue
-            #
-            # # If velocity > threshold = New person
-            # if len(self.blackboard["faceTarget"]) < max_num_people:
-            #     self.blackboard["faceTarget"][len(self.blackboard["faceTarget"]) + 1] = [Person(len(self.blackboard["faceTarget"]) + 1), x, y, 0, 0, 0]
-            # # Replace the oldest with the new one
-            # else:
-            #     self.blackboard["faceTarget"][key_of_oldest] = [Person(key_of_oldest), x, y, 0, 0, 0]
 
     def saliencyCallback(self, data):
         self.blackboard["saliencyTarget"][0] = [Person(0), data.positions[0].x, data.positions[0].y, 0, 0]
         # TODO: Person should contain the coordinates!
-        self.blackboard["robot"].gaze_and_wait(Person(0).head, speed=0.5)
+        # self.blackboard["robot"].gaze_and_wait(Person(0).head, speed=0.5)
         del self.blackboard["saliencyTarget"][0]
+
+    def emotionCallback(self, data):
+        self.blackboard["emotionInputAge"] = 0
+        self.blackboard["emotionInput"] = data.data
 
     def determineCurrentTarget(self):
         youngest_age = -1
@@ -817,17 +803,18 @@ class Tree:
 
     def removeFace(self):
         # print "Looking for faces to remove"
-        disappear_threshold = 10
+        disappear_threshold = 8
         people_to_del = []
         for (key, person_detail) in self.blackboard["faceTarget"].iteritems():
             if person_detail[5] > disappear_threshold:  # person_detail[5] = disappear_age
                 people_to_del.append(key)
         for key in people_to_del:
             del self.blackboard["faceTarget"][key]
+            print "Person(" + str(key) + ") is gone!!! (" + str(len(self.blackboard["faceTarget"])) + " left)"
 
     @owyl.taskmethod
     def test(self, **kwargs):
-        print "The tree is running..." + time.strftime("%Y%m%d%H%M%S")
+        # print "The tree is running..." + time.strftime("%Y%m%d%H%M%S")
         # self.zenodial_listen_pub.publish("Testing 123 please work")
         yield True
 
@@ -850,10 +837,10 @@ class Tree:
         index_dage = 5
 
         self.blackboard["randomInput"] = random.random()
-        # for (key, person_detail) in self.blackboard["faceTarget"].iteritems():
-        #     self.blackboard["faceTarget"][key] = [person_detail[index_person], person_detail[index_x], person_detail[index_y], person_detail[index_vel], person_detail[index_age]+1, person_detail[index_dage]+1]
-        # for (key, person_detail) in self.blackboard["saliencyTarget"].iteritems():
-        #     self.blackboard["saliencyTarget"][key] = [person_detail[index_person], person_detail[index_x], person_detail[index_y], person_detail[index_vel], person_detail[index_age]+1, person_detail[index_dage]+1]
+        for (key, person_detail) in self.blackboard["faceTarget"].iteritems():
+            self.blackboard["faceTarget"][key] = [person_detail[index_person], person_detail[index_x], person_detail[index_y], person_detail[index_vel], person_detail[index_age]+1, person_detail[index_dage]+1]
+        for (key, person_detail) in self.blackboard["saliencyTarget"].iteritems():
+            self.blackboard["saliencyTarget"][key] = [person_detail[index_person], person_detail[index_x], person_detail[index_y], person_detail[index_vel], person_detail[index_age]+1, person_detail[index_dage]+1]
         self.blackboard["audioInputAge"] = int(self.blackboard["audioInputAge"]) + 1
         self.blackboard["rosInputAge"] = int(self.blackboard["rosInputAge"]) + 1
         self.blackboard["emotionInputAge"] = int(self.blackboard["emotionInputAge"]) + 1
@@ -1030,7 +1017,7 @@ class Tree:
 
     @owyl.taskmethod
     def faceGaze(self, **kwargs):
-        self.blackboard["robot"].gaze_and_wait(self.blackboard["targetPos"].head, speed=0.5)
+        # self.blackboard["robot"].gaze_and_wait(self.blackboard["targetPos"].head, speed=0.5)
         yield True
 
     @owyl.taskmethod
@@ -1048,7 +1035,7 @@ class Tree:
         yield True
 
     @owyl.taskmethod
-    def toDialSystem(self, **kwargs):
+    def toZenoDial(self, **kwargs):
         utterance = self.blackboard.get(kwargs["key"])
 
         print "Sending \"" + utterance + "\" to ZenoDial"
