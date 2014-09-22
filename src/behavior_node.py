@@ -88,12 +88,16 @@ class Tree:
         self.itf_talk_pub = rospy.Publisher("itf_talk", String, queue_size=1)
         self.zenodial_listen_pub = rospy.Publisher("zenodial_listen", String, queue_size=1)
         self.robot_movement_pub = rospy.Publisher("robot_movement", String, queue_size=1)
+        self.itf_talk_stop_pub = rospy.Publisher("itf_talk_stop", String, queue_size=1)
 
         self.blackboard["commandKeywords"] = {
                 'Walk Forward': ['forward', 'ahead', 'straight', 'forwards'],
                 'Walk Backward': ['back', 'backward', 'back up', 'backwards'],
                 'Turn Left': ['turn left', 'turn lefts', 'turns left'],
-                'Turn Right': ['turn right', 'turn rights', 'turns right']}
+                'Turn Right': ['turn right', 'turn rights', 'turns right'],
+                'Stop Speaking': ['stop speaking', 'shut up']}
+        self.blackboard["playemotion"] = {
+                "Play Emotion": ["play detect emotions"]}
 
         ### Inputs
         self.blackboard["faceTarget"] = {}                        # seq no: [Person obj, x, y, velocity, age, disappear_age]
@@ -144,10 +148,12 @@ class Tree:
         self.blackboard["Frown"] = "Frown"
         self.blackboard["FrownMouth"] = "Frown Mouth"
         self.blackboard["OpenMouth"] = "Open Mouth"
+        self.blackboard["StopSpeaking"] = "Stop Speaking"
         self.blackboard["eyeFree0.25"] = self.blackboard["randomInput"] * 0.25 * self.blackboard["eyeFreedom"]
         self.blackboard["eyeFree0.75"] = self.blackboard["randomInput"] * 0.75 * self.blackboard["eyeFreedom"]
         self.blackboard["neckFree0.1"] = self.blackboard["randomInput"] * 0.1 * self.blackboard["neckFreedom"]
         self.blackboard["neckFree0.3"] = self.blackboard["randomInput"] * 0.3 * self.blackboard["neckFreedom"]
+        self.blackboard["commandFound"] = False
         self.blackboard["boolean_true"] = True
         self.blackboard["boolean_false"] = False
         self.blackboard["null"] = ""
@@ -268,6 +274,10 @@ class Tree:
                 ),
                 owyl.sequence(
                     self.setVariable(var="commandName", value="OpenMouth"),
+                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+                ),
+                owyl.sequence(
+                    self.setVariable(var="commandName", value="StopSpeaking"),
                     owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
                 )
             )
@@ -462,11 +472,11 @@ class Tree:
                 owyl.limit(
                     owyl.repeatAlways(
                         owyl.selector(  # Select response to command or natural behavior
-                            owyl.sequence(  # If the last audio or blender input is a command, then select a response
-                                self.isCommand(key="audioInput"),
+                            # owyl.sequence(  # If the last audio or blender input is a command, then select a response
+                                # self.isCommand(key="audioInput"),
                                 # self.setVariable(var="bodyOrFace", value="body"),
-                                owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
-                            ),
+                                # owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
+                            # ),
                             # It's not a command, so start checking for natural behaviors
                             owyl.sequence(
                                 self.isNoSalientTarget(),
@@ -523,15 +533,22 @@ class Tree:
                                         self.setVariable(var="commandInput", value="rosInput")
                                     ),
                                 ),
+                                # self.testSelectCommand()
+                                # owyl.sequence(
+                                #     self.setVariable(var="commandName", value="Idle"),
+                                #     # owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+                                # ),
+                                # self.actionToPhrase(key="commandInput"),
+                                # self.isCommandPhrase(commandName="commandName", actionPhrase="actionPhrase"),
+                                # self.setVariable(var="actionName", value="commandName"),
+
                                 # self.setVariable(var="bodyOrFace", value=self.HEAD_NECK),
-                                owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
-                            ),
-                            owyl.sequence(
-                                self.isLess(num1="randomInput", num2=0.5),
-                                self.askEmotion()
+                                # owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
+
                             ),
                             owyl.sequence(
                                 self.isAudioInput(),
+                                self.isNotSpeaking(),
                                 self.toZenoDial(key="audioInput")
                             )
                         )
@@ -641,11 +658,11 @@ class Tree:
                 owyl.limit(
                     owyl.repeatAlways(
                         owyl.selector(  # Select response to command or natural behavior
-                            owyl.sequence(  # If the last audio or blender input is a command, then select a response
-                                self.isCommand(key="audioInput"),
+                            # owyl.sequence(  # If the last audio or blender input is a command, then select a response
+                                # self.isCommand(key="audioInput"),
                                 # self.setVariable(var=self.bodyOrFace, value=self.UPPER_BODY),
-                                owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
-                            ),
+                                # owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
+                            # ),
                             # It's not a command, so start checking for natural behaviors
                             owyl.sequence(
                                 self.isNoSalientTarget(),
@@ -707,11 +724,8 @@ class Tree:
                                 owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
                             ),
                             owyl.sequence(
-                                self.isLess(num1="randomInput", num2=0.5),
-                                self.askEmotion()
-                            ),
-                            owyl.sequence(
                                 self.isAudioInput(),
+                                self.isNotSpeaking(),
                                 self.toZenoDial(key="audioInput")
                             )
                         )
@@ -747,7 +761,10 @@ class Tree:
         print "(From itf_listen) " + data.data
 
     def isSpeakingCallback(self, data):
-        self.blackboard["speechActive"] = data.data
+        if data.data:
+            self.blackboard["speechActive"] = data.data
+        elif self.blackboard["speechOutputAge"] > 4:
+            self.blackboard["speechActive"] = data.data
 
     def faceDetectCallback(self, data):
         # Loop through each pair of the input coordinates
@@ -1009,11 +1026,15 @@ class Tree:
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.TurnRight)
 
-        elif actionName == "Stop":
-            if self.blackboard["robotName"] == "Zoid":
-                self.blackboard["robot"].gesture(ZoidGestureData.Stop)
-            elif self.blackboard["robotName"] == "Zeno":
-                self.blackboard["robot"].gesture(ZenoGestureData.Stop)
+        # elif actionName == "Stop":
+        #     if self.blackboard["robotName"] == "Zoid":
+        #         self.blackboard["robot"].gesture(ZoidGestureData.Stop)
+        #     elif self.blackboard["robotName"] == "Zeno":
+        #         self.blackboard["robot"].gesture(ZenoGestureData.Stop)
+
+        elif actionName == "Stop Speaking":
+            print "Stopping....!!!!!"
+            self.itf_talk_stop_pub("Stop...")
 
         yield True
 
@@ -1052,27 +1073,29 @@ class Tree:
         print "Sending \"" + utterance + "\" to ZenoDial"
         self.zenodial_listen_pub.publish(utterance)
         self.blackboard["audioInput"] = ""
-        self.blackboard["emotionInput"] = ""
         yield True
 
     @owyl.taskmethod
     def isCommand(self, **kwargs):
-        commandName = self.blackboard.get(kwargs["key"])
+        audiorosInput = self.blackboard.get(kwargs["key"])
 
-        found = False
+        # found = False
+        self.blackboard["commandFound"] = False
         for (key, keywords) in self.blackboard["commandKeywords"].iteritems():
             for word in keywords:
-                if commandName == word > -1:
-                    found = True
+                if audiorosInput == word > -1:
+                    # found = True
+                    self.blackboard["commandFound"] = True
                     self.blackboard["audioInput"] = ""
-                    self.blackboard["emotionInput"] = ""
+                    print audiorosInput + " is a command!!!"
                     yield True
-        if not found:
+        # if not found:
+        if not self.blackboard["commandFound"]:
             yield False
 
     @owyl.taskmethod
     def isCommandPhrase(self, **kwargs):
-        if blackboard[kwargs["commandName"]] == blackboard[kwargs["actionPhrase"]]:
+        if self.blackboard[kwargs["commandName"]] == self.blackboard[kwargs["actionPhrase"]]:
             yield True
         else:
             yield False
@@ -1083,6 +1106,7 @@ class Tree:
 
     @owyl.taskmethod
     def setVariable(self, **kwargs):
+        print "From " + kwargs["var"] + " to " + kwargs["value"]
         self.blackboard[kwargs["var"]] = self.blackboard[kwargs["value"]]
         yield True
 
@@ -1124,6 +1148,13 @@ class Tree:
     @owyl.taskmethod
     def isNoAudioInput(self, **kwargs):
         if self.blackboard["audioInput"] == "":
+            yield True
+        else:
+            yield False
+
+    @owyl.taskmethod
+    def isNotSpeaking(self, **kwargs):
+        if not self.blackboard["speechActive"]:
             yield True
         else:
             yield False
