@@ -389,47 +389,9 @@ class Tree:
         self.mimic = \
             owyl.selector(
                 owyl.sequence(
-                    self.isVariable(var="emotionInput", value="Happy"),
+                    # self.isVariable(var="emotionInput", value="Happy"),
                     # self.showAction(action="Happy", part=self.UPPER_BODY),
                     # self.showAction(action="Happy", part=self.HEAD_NECK)
-                )
-            )
-
-        ## To check the emotion inputs from OpenEar
-        self.askEmotion = \
-            owyl.selector(
-                owyl.sequence(
-                    self.isVariable(var="emotionInput", value="agressiv"),
-                    self.say(utterance="Please don't be aggressive"),
-                    self.setVariable(var="emotionInput", value="null")
-                ),
-                owyl.sequence(
-                    owyl.selector(
-                        self.isVariable(var="emotionInput", value="cheerful"),
-                        self.isVariable(var="emotionInput", value="interested"),
-                    ),
-                    self.say(utterance="Hey you sound cheerful!"),
-                    self.setVariable(var="emotionInput", value="null")
-                ),
-                owyl.sequence(
-                    self.isVariable(var="emotionInput", value="intoxicated"),
-                    self.say(utterance="You sound intoxicated, why?"),
-                    self.setVariable(var="emotionInput", value="null")
-                ),
-                owyl.sequence(
-                    self.isVariable(var="emotionInput", value="intoxicated"),
-                    self.say(utterance="You sound nervous, why?"),
-                    self.setVariable(var="emotionInput", value="null")
-                ),
-                owyl.sequence(
-                    self.isVariable(var="emotionInput", value="intoxicated"),
-                    self.say(utterance="You sound tired, why?"),
-                    self.setVariable(var="emotionInput", value="null")
-                ),
-                owyl.sequence(
-                    self.isVariable(var="emotionInput", value="intoxicated"),
-                    self.say(utterance="You sound bored, why?"),
-                    self.setVariable(var="emotionInput", value="null")
                 )
             )
 
@@ -573,7 +535,7 @@ class Tree:
 
                             ),
                             owyl.sequence(
-                                owyl.selector(
+                                owyl.selector(  #TODO: change to sequence
                                     self.isAudioInput(),
                                     self.isEmotionInput(),
                                 ),
@@ -843,7 +805,12 @@ class Tree:
 
     def emotionCallback(self, data):
         self.blackboard["emotionInputAge"] = 0
-        self.blackboard["emotionInput"] = data.data
+        if not self.blackboard["emotionInput"] == "" and self.blackboard["emotionInput"].find("and") < 0:
+            self.blackboard["emotionInput"] = self.blackboard["emotionInput"] + " and " + data.data
+        else:
+            self.blackboard["emotionInput"] = data.data
+        if self.blackboard["emotionInput"].find("and") > 0:
+            print "Emotion = " + self.blackboard["emotionInput"]
 
     def getTheYoungestPerson(self):
         youngest_age = -1
@@ -1144,20 +1111,6 @@ class Tree:
             yield False
 
     @owyl.taskmethod
-    def stopEmotionDetection(self, **kwargs):
-        audioInput = self.blackboard[kwargs["key"]]
-        found = False
-        for (key, keywords) in self.blackboard["stopplayemotion"].iteritems():
-            for word in keywords:
-                if audioInput.find(word) > -1:
-                    found = True
-                    self.blackboard["stopEmotionDetection"] = True
-                    self.blackboard["startEmotionDetection"] = False
-                    yield True
-        if not found:
-            yield False
-
-    @owyl.taskmethod
     def isNotStopEmotionDetection(self, **kwargs):
         if not self.blackboard["isDetectingEmotion"]:
             yield True
@@ -1193,35 +1146,49 @@ class Tree:
 
     @owyl.taskmethod
     def startEmotionDetection(self, **kwargs):
-        emotionInput = self.blackboard["emotionInput"]
-        output = "You sound very "
-
-        if emotionInput == "anger":
-            output += "angry"
-        elif emotionInput == "boredom":
-            output += "bored"
-        elif emotionInput == "disgust":
-            output += "disgusting"
-        elif emotionInput == "fear":
-            output += "fearful"
-        elif emotionInput == "happiness":
-            output += "happy"
-        elif emotionInput == "sadness":
-            output += "sad"
-        elif emotionInput == "agressiv":
-            output += "aggressive"
-        elif emotionInput == "cheerful":
-            output += "cheerful"
-        elif emotionInput == "intoxicated":
-            output += "intoxicated"
-        elif emotionInput == "nervous":
-            output += "nervous"
-        elif emotionInput == "tired":
-            output += "tired"
+        if self.blackboard["emotionInput"]:  # TODO: Should not need this part
+            emotion = self.blackboard["emotionInput"]
+            output = "You are very "
         else:
-            output += "neutral"
+            return
 
-        self.itf_talk_pub.publish(output)  # For now
+        emotion = emotion\
+            .replace("anger", "angry")\
+            .replace("boredom", "bored")\
+            .replace("disgust", "disgusting")\
+            .replace("fear", "fearful")\
+            .replace("happiness", "happy")\
+            .replace("sadness", "sad")\
+            .replace("agressiv", "aggressive")
+
+        # if output.find("anger") > 0:
+        #     output.replace("anger", "angry")
+        # elif emotionInput == "boredom":
+        #     output += "bored"
+        # elif emotionInput == "disgust":
+        #     output += "disgusting"
+        # elif emotionInput == "fear":
+        #     output += "fearful"
+        # elif emotionInput == "happiness":
+        #     output += "happy"
+        # elif emotionInput == "sadness":
+        #     output += "sad"
+        # elif emotionInput == "agressiv":
+        #     output += "aggressive"
+        # elif emotionInput == "cheerful":
+        #     output += "cheerful"
+        # elif emotionInput == "intoxicated":
+        #     output += "intoxicated"
+        # elif emotionInput == "nervous":
+        #     output += "nervous"
+        # elif emotionInput == "tired":
+        #     output += "tired"
+        # else:
+        #     output += "neutral"
+
+        output += emotion
+        print output
+        # self.itf_talk_pub.publish(output)  # For now
         # self.blackboard["robot"].say(output)
 
         self.blackboard["emotionInput"] = ""
@@ -1302,7 +1269,8 @@ class Tree:
 
     @owyl.taskmethod
     def isEmotionInput(self, **kwargs):
-        if not self.blackboard["emotionInput"] == "":
+        # if not self.blackboard["emotionInput"] == "":
+        if not self.blackboard["emotionInput"]:
             yield True
         else:
             yield False
