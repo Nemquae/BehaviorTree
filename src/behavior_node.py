@@ -174,18 +174,18 @@ class Tree:
         ## Announce the action we're about to take and then reset the robot to a default stance.
         # Though we announce an action, this tree doesn't execute the action.
         # Assumes actionName has been set
-        self.announceAndResetTree = \
-            owyl.sequence(  # announce the action and then reset
-                owyl.selector(  # If we're not speaking, then speak
-                    self.isSpeaking(),
-                    self.actionToPhrase(key="actionName"),
-                    self.sayStartAction(key="actionPhrase")
-                ),
-                owyl.selector(  # If we're no in a default stance, reset (blend) to the default stance
-                    self.isDefaultStance(),
-                    self.resetToDefaultStance()
-                )
-            )
+        # self.announceAndResetTree = \
+        #     owyl.sequence(  # announce the action and then reset
+        #         owyl.selector(  # If we're not speaking, then speak
+        #             self.isSpeaking(),
+        #             self.actionToPhrase(key="actionName"),
+        #             self.sayStartAction(key="actionPhrase")
+        #         ),
+        #         owyl.selector(  # If we're no in a default stance, reset (blend) to the default stance
+        #             self.isDefaultStance(),
+        #             self.resetToDefaultStance()
+        #         )
+        #     )
 
         ## Executes a basic command, such as to play an animation.
         # Assumes commandName has been set
@@ -193,94 +193,93 @@ class Tree:
         # Assumes bodyOrFace has been set
         # Will announce the command (if not already speaking)
         # before showing the associated animation
-        self.executeBasicCommandSubtree = \
-            owyl.sequence(
-                self.actionToPhrase(key="commandInput"),
-                self.isCommandPhrase(commandName="commandName", actionPhrase="actionPhrase"),
-                self.setVariable(var="actionName", value="commandName"),
-                owyl.selector(  # try the command sequence (subtree) or report failure
-                    owyl.sequence(
-                        owyl.visit(self.announceAndResetTree, blackboard=self.blackboard),
-                        self.showAction(action="actionName")
-                        # self.showAction(action="actionName", part="bodyOrFace"),  # Finally play the command's animation
-                    ),
-                    owyl.sequence(
-                        self.say(utterance="I'm sorry, Dave, I'm afraid I can't do that..."),
-                        owyl.fail()
-                    )
-                )
-            )
+        # self.executeBasicCommandSubtree = \
+        #     owyl.sequence(
+        #         self.actionToPhrase(key="commandInput"),
+        #         self.isCommandPhrase(commandName="commandName", actionPhrase="actionPhrase"),
+        #         self.setVariable(var="actionName", value="commandName"),
+        #         owyl.selector(  # try the command sequence (subtree) or report failure
+        #             owyl.sequence(
+        #                 owyl.visit(self.announceAndResetTree, blackboard=self.blackboard),
+        #                 self.showCommand(self.commandName, self.bodyOrFace),  # Finally play the command's animation
+        #             ),
+        #             owyl.sequence(
+        #                 self.say(utterance="I'm sorry, Dave, I'm afraid I can't do that..."),
+        #                 owyl.fail()
+        #             )
+        #         )
+        #     )
 
         ## Select a basic command to execute, once we know that we've been given a command.
         # Assumes bodyOrFace has been set, to distinguish body actions from face actions
         # Assumes commandInput has been set to either audioInput or rosInput
-        self.selectBasicCommandSubtree = \
-            owyl.selector(  # Select from one of several mutually exclusive behaviors
-                owyl.sequence(  # If we should be idling, then try to play the Idle animation...
-                    self.setVariable(var="commandName", value="Idle"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(
-                    self.setVariable(var="commandName", value="StopSpeech"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(  # If we're commanded to anc can walk to target location, then play the walk animation until we reach the target
-                    self.setVariable(var="commandName", value="WalkForward"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(
-                    self.setVariable(var="commandName", value="WalkBackward"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(
-                    self.setVariable(var="commandName", value="TurnLeft"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(
-                    self.setVariable(var="commandName", value="TurnRight"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(
-                    self.setVariable(var="commandName", value="PointUp"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(
-                    self.setVariable(var="commandName", value="PointDown"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(
-                    self.setVariable(var="commandName", value="LookUp"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(
-                    self.setVariable(var="commandName", value="LookDown"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(
-                    self.setVariable(var="commandName", value="Wave"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(  # If we should show an emotion, then select the right one and show it.
-                    self.setVariable(var="commandName", value="Smile"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(
-                    self.setVariable(var="commandName", value="Frown"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(
-                    self.setVariable(var="commandName", value="FrownMouth"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(
-                    self.setVariable(var="commandName", value="OpenMouth"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                ),
-                owyl.sequence(
-                    self.setVariable(var="commandName", value="StopSpeaking"),
-                    owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                )
-            )
+        # self.selectBasicCommandSubtree = \
+        #     owyl.selector(  # Select from one of several mutually exclusive behaviors
+        #         owyl.sequence(  # If we should be idling, then try to play the Idle animation...
+        #             self.setVariable(var="commandName", value="Idle"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(
+        #             self.setVariable(var="commandName", value="StopSpeech"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(  # If we're commanded to anc can walk to target location, then play the walk animation until we reach the target
+        #             self.setVariable(var="commandName", value="WalkForward"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(
+        #             self.setVariable(var="commandName", value="WalkBackward"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(
+        #             self.setVariable(var="commandName", value="TurnLeft"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(
+        #             self.setVariable(var="commandName", value="TurnRight"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(
+        #             self.setVariable(var="commandName", value="PointUp"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(
+        #             self.setVariable(var="commandName", value="PointDown"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(
+        #             self.setVariable(var="commandName", value="LookUp"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(
+        #             self.setVariable(var="commandName", value="LookDown"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(
+        #             self.setVariable(var="commandName", value="Wave"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(  # If we should show an emotion, then select the right one and show it.
+        #             self.setVariable(var="commandName", value="Smile"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(
+        #             self.setVariable(var="commandName", value="Frown"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(
+        #             self.setVariable(var="commandName", value="FrownMouth"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(
+        #             self.setVariable(var="commandName", value="OpenMouth"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         ),
+        #         owyl.sequence(
+        #             self.setVariable(var="commandName", value="StopSpeaking"),
+        #             owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
+        #         )
+        #     )
 
         ## Tracks the target face or salient point
         # Assumes targetPos has been set to face, body, or salient position
@@ -524,26 +523,51 @@ class Tree:
                                     self.isRosInput()
                                 ),
                                 owyl.selector(
-                                    owyl.sequence(
-                                        self.isCommand(key="audioInput"),
-                                        self.setVariable(var="commandInput", value="audioInput")
-                                    ),
-                                    owyl.sequence(
-                                        self.isCommand(key="rosInput"),
-                                        self.setVariable(var="commandInput", value="rosInput")
-                                    ),
+                                    self.isCommand(key="audioInput"),
+                                    self.isCommand(key="rosInput")
                                 ),
-                                # self.testSelectCommand()
-                                # owyl.sequence(
-                                #     self.setVariable(var="commandName", value="Idle"),
-                                #     # owyl.visit(self.executeBasicCommandSubtree, blackboard=self.blackboard)
-                                # ),
-                                # self.actionToPhrase(key="commandInput"),
-                                # self.isCommandPhrase(commandName="commandName", actionPhrase="actionPhrase"),
-                                # self.setVariable(var="actionName", value="commandName"),
-
                                 # self.setVariable(var="bodyOrFace", value=self.HEAD_NECK),
                                 # owyl.visit(self.selectBasicCommandSubtree, blackboard=self.blackboard)
+
+                                owyl.selector(
+                                    owyl.sequence(
+                                        self.isCommandPhrase(commandName="StopSpeech", actionPhrase="actionName"),
+                                        self.isNotSpeaking(),
+                                        self.sayStartAction(key="actionName"),
+                                        self.showAction(key="actionName")
+                                    ),
+                                    owyl.sequence(
+                                        self.isCommandPhrase(commandName="WalkForward", actionPhrase="actionName"),
+                                        self.isNotSpeaking(),
+                                        self.sayStartAction(key="actionName"),
+                                        self.showAction(key="actionName")
+                                    ),
+                                    owyl.sequence(
+                                        self.isCommandPhrase(commandName="WalkBackward", actionPhrase="actionName"),
+                                        self.isNotSpeaking(),
+                                        self.sayStartAction(key="actionName"),
+                                        self.showAction(key="actionName")
+                                    ),
+                                    owyl.sequence(
+                                        self.isCommandPhrase(commandName="TurnLeft", actionPhrase="actionName"),
+                                        self.isNotSpeaking(),
+                                        self.sayStartAction(key="actionName"),
+                                        self.showAction(key="actionName")
+                                    ),
+                                    owyl.sequence(
+                                        self.isCommandPhrase(commandName="TurnRight", actionPhrase="actionName"),
+                                        self.isNotSpeaking(),
+                                        self.sayStartAction(key="actionName"),
+                                        self.showAction(key="actionName")
+                                    ),
+                                    owyl.sequence(
+                                        self.isCommandPhrase(commandName="StopSpeaking", actionPhrase="actionName"),
+                                        self.isNotSpeaking(),
+                                        self.sayStartAction(key="actionName"),
+                                        self.showAction(key="actionName")
+                                    ),
+                                    self.printStatus(msg="I'm sorry, Dave, I'm afraid I can't do that...")
+                                )
 
                             ),
                             owyl.sequence(
@@ -713,11 +737,11 @@ class Tree:
                                 owyl.selector(
                                     owyl.sequence(
                                         self.isCommand(key="audioInput"),
-                                        self.setVariable(var="commandInput", value="audioInput")
+                                        # self.setVariable(var="commandInput", value="audioInput")
                                     ),
                                     owyl.sequence(
                                         self.isCommand(key="rosInput"),
-                                        self.setVariable(var="commandInput", value="rosInput")
+                                        # self.setVariable(var="commandInput", value="rosInput")
                                     ),
                                 ),
                                 # self.setVariable(var=self.bodyOrFace, value=self.HEAD_NECK),
@@ -840,12 +864,20 @@ class Tree:
         yield True
 
     @owyl.taskmethod
-    def actionToPhrase(self, **kwargs):
-        for (key, keywords) in self.blackboard["commandKeywords"].iteritems():
-            for word in keywords:
-                if self.blackboard["actionName"] == word:
-                    self.blackboard["actionPhrase"] = key
+    def printStatus(self, **kwargs):
+        print kwargs["msg"]
         yield True
+
+    # @owyl.taskmethod
+    # def actionToPhrase(self, **kwargs):
+    #     action = self.blackboard[kwargs["key"]]
+    #
+    #     for (key, keywords) in self.blackboard["commandKeywords"].iteritems():
+    #         for word in keywords:
+    #             if action == word:
+    #                 self.blackboard["actionPhrase"] = key
+    #                 return  # Good???
+    #     yield True
 
     @owyl.taskmethod
     def updateVariables(self, **kwargs):
@@ -932,12 +964,14 @@ class Tree:
 
     @owyl.taskmethod
     def sayStartAction(self, **kwargs):
-        self.blackboard["robot"].say("I'll start to " + kwargs["actionName"] + "...")
+        print "Okay, " + self.blackboard[kwargs["key"]] + "..."
+        self.itf_talk_pub.publish("Okay, " + self.blackboard[kwargs["key"]] + "...")  # For now
+        # self.blackboard["robot"].say("I'll start to " + self.blackboard[kwargs["action"]] + "...")
         yield True
 
     @owyl.taskmethod
     def showAction(self, **kwargs):
-        actionName = self.blackboard[kwargs["action"]]
+        actionName = self.blackboard[kwargs["key"]]
         # part = kwargs["part"]
 
         if actionName == "Smile":
@@ -1026,15 +1060,12 @@ class Tree:
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.TurnRight)
 
-        # elif actionName == "Stop":
-        #     if self.blackboard["robotName"] == "Zoid":
-        #         self.blackboard["robot"].gesture(ZoidGestureData.Stop)
-        #     elif self.blackboard["robotName"] == "Zeno":
-        #         self.blackboard["robot"].gesture(ZenoGestureData.Stop)
-
         elif actionName == "Stop Speaking":
             print "Stopping....!!!!!"
-            self.itf_talk_stop_pub("Stop...")
+            self.itf_talk_stop_pub.publish("Stop...")
+
+        self.blackboard["audioInput"] = ""
+        self.blackboard["actionName"] = ""
 
         yield True
 
@@ -1056,15 +1087,15 @@ class Tree:
         self.blackboard["saliencyTarget"] = {}
         yield True
 
-    @owyl.taskmethod
-    def isDefaultStance(self):
-        # TODO: Need to confirm if there is a default stance or a way to do so
-        yield True
+    # @owyl.taskmethod
+    # def isDefaultStance(self):
+    #     # TODO: Need to confirm if there is a default stance or a way to do so
+    #     yield True
 
-    @owyl.taskmethod
-    def resetToDefaultStance(self):
-        # TODO: Need to confirm if there is a default stance or a way to do so
-        yield True
+    # @owyl.taskmethod
+    # def resetToDefaultStance(self):
+    #     # TODO: Need to confirm if there is a default stance or a way to do so
+    #     yield True
 
     @owyl.taskmethod
     def toZenoDial(self, **kwargs):
@@ -1083,10 +1114,12 @@ class Tree:
         self.blackboard["commandFound"] = False
         for (key, keywords) in self.blackboard["commandKeywords"].iteritems():
             for word in keywords:
-                if audiorosInput == word > -1:
+                # if audiorosInput == word > -1:
+                if audiorosInput.find(word) > -1:
                     # found = True
                     self.blackboard["commandFound"] = True
-                    self.blackboard["audioInput"] = ""
+                    self.blackboard["actionName"] = key
+                    # self.blackboard["audioInput"] = ""
                     print audiorosInput + " is a command!!!"
                     yield True
         # if not found:
