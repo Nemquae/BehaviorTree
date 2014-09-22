@@ -91,13 +91,15 @@ class Tree:
         self.itf_talk_stop_pub = rospy.Publisher("itf_talk_stop", String, queue_size=1)
 
         self.blackboard["commandKeywords"] = {
-                'Walk Forward': ['forward', 'ahead', 'straight', 'forwards'],
-                'Walk Backward': ['back', 'backward', 'back up', 'backwards'],
+                'Walk Forward': ['go forward', 'move forward', 'go ahead', 'move ahead', 'go straight', 'move straight', 'go forwards', 'move forwards'],
+                'Walk Backward': ['go back', 'move back', 'go backward', 'move backward', 'go backwards', 'move backwards'],
                 'Turn Left': ['turn left', 'turn lefts', 'turns left'],
                 'Turn Right': ['turn right', 'turn rights', 'turns right'],
                 'Stop Speaking': ['stop speaking', 'shut up']}
         self.blackboard["playemotion"] = {
-                "Play Emotion": ["play detect emotions"]}
+                "Start Emotion Detection": ["start emotion detection"]}
+        self.blackboard["stopplayemotion"] = {
+                "Stop Emotion Detection": ["stop emotion detection"]}
 
         ### Inputs
         self.blackboard["faceTarget"] = {}                        # seq no: [Person obj, x, y, velocity, age, disappear_age]
@@ -153,7 +155,7 @@ class Tree:
         self.blackboard["eyeFree0.75"] = self.blackboard["randomInput"] * 0.75 * self.blackboard["eyeFreedom"]
         self.blackboard["neckFree0.1"] = self.blackboard["randomInput"] * 0.1 * self.blackboard["neckFreedom"]
         self.blackboard["neckFree0.3"] = self.blackboard["randomInput"] * 0.3 * self.blackboard["neckFreedom"]
-        self.blackboard["commandFound"] = False
+        self.blackboard["isDetectingEmotion"] = False
         self.blackboard["boolean_true"] = True
         self.blackboard["boolean_false"] = False
         self.blackboard["null"] = ""
@@ -571,6 +573,16 @@ class Tree:
 
                             ),
                             owyl.sequence(
+                                owyl.selector(
+                                    self.isAudioInput(),
+                                    self.isEmotionInput(),
+                                ),
+                                self.isNotStopEmotionDetection(key="audioInput"),
+                                self.isEmotionDetection(key="audioInput"),
+                                self.isNotSpeaking(),
+                                self.startEmotionDetection()
+                            ),
+                            owyl.sequence(
                                 self.isAudioInput(),
                                 self.isNotSpeaking(),
                                 self.toZenoDial(key="audioInput")
@@ -958,7 +970,8 @@ class Tree:
 
     @owyl.taskmethod
     def say(self, **kwargs):
-        self.blackboard["robot"].say(kwargs["utterance"])
+        self.itf_talk_pub.publish(kwargs["utterance"])  # For now
+        # self.blackboard["robot"].say(kwargs["utterance"])
         self.blackboard["speechOutputAge"] = 0
         yield True
 
@@ -1099,7 +1112,7 @@ class Tree:
 
     @owyl.taskmethod
     def toZenoDial(self, **kwargs):
-        utterance = self.blackboard.get(kwargs["key"])
+        utterance = self.blackboard[kwargs["key"]]
 
         print "Sending \"" + utterance + "\" to ZenoDial"
         self.zenodial_listen_pub.publish(utterance)
@@ -1108,22 +1121,19 @@ class Tree:
 
     @owyl.taskmethod
     def isCommand(self, **kwargs):
-        audiorosInput = self.blackboard.get(kwargs["key"])
+        audiorosInput = self.blackboard[kwargs["key"]]
 
-        # found = False
-        self.blackboard["commandFound"] = False
+        found = False
         for (key, keywords) in self.blackboard["commandKeywords"].iteritems():
             for word in keywords:
                 # if audiorosInput == word > -1:
                 if audiorosInput.find(word) > -1:
-                    # found = True
-                    self.blackboard["commandFound"] = True
+                    found = True
                     self.blackboard["actionName"] = key
                     # self.blackboard["audioInput"] = ""
                     print audiorosInput + " is a command!!!"
                     yield True
-        # if not found:
-        if not self.blackboard["commandFound"]:
+        if not found:
             yield False
 
     @owyl.taskmethod
@@ -1132,6 +1142,90 @@ class Tree:
             yield True
         else:
             yield False
+
+    @owyl.taskmethod
+    def stopEmotionDetection(self, **kwargs):
+        audioInput = self.blackboard[kwargs["key"]]
+        found = False
+        for (key, keywords) in self.blackboard["stopplayemotion"].iteritems():
+            for word in keywords:
+                if audioInput.find(word) > -1:
+                    found = True
+                    self.blackboard["stopEmotionDetection"] = True
+                    self.blackboard["startEmotionDetection"] = False
+                    yield True
+        if not found:
+            yield False
+
+    @owyl.taskmethod
+    def isNotStopEmotionDetection(self, **kwargs):
+        if not self.blackboard["isDetectingEmotion"]:
+            yield True
+            return
+
+        audioInput = self.blackboard[kwargs["key"]]
+        found = False
+        for (key, keywords) in self.blackboard["stopplayemotion"].iteritems():
+            for word in keywords:
+                if audioInput.find(word) > -1:
+                    found = True
+                    self.blackboard["isDetectingEmotion"] = False
+                    yield False
+        if not found:
+            yield True
+
+    @owyl.taskmethod
+    def isEmotionDetection(self, **kwargs):
+        if self.blackboard["isDetectingEmotion"]:
+            yield True
+            return
+
+        audioInput = self.blackboard[kwargs["key"]]
+        found = False
+        for (key, keywords) in self.blackboard["playemotion"].iteritems():
+            for word in keywords:
+                if audioInput.find(word) > -1:
+                    found = True
+                    self.blackboard["isDetectingEmotion"] = True
+                    yield True
+        if not found:
+            yield False
+
+    @owyl.taskmethod
+    def startEmotionDetection(self, **kwargs):
+        emotionInput = self.blackboard["emotionInput"]
+        output = "You sound very "
+
+        if emotionInput == "anger":
+            output += "angry"
+        elif emotionInput == "boredom":
+            output += "bored"
+        elif emotionInput == "disgust":
+            output += "disgusting"
+        elif emotionInput == "fear":
+            output += "fearful"
+        elif emotionInput == "happiness":
+            output += "happy"
+        elif emotionInput == "sadness":
+            output += "sad"
+        elif emotionInput == "agressiv":
+            output += "aggressive"
+        elif emotionInput == "cheerful":
+            output += "cheerful"
+        elif emotionInput == "intoxicated":
+            output += "intoxicated"
+        elif emotionInput == "nervous":
+            output += "nervous"
+        elif emotionInput == "tired":
+            output += "tired"
+        else:
+            output += "neutral"
+
+        self.itf_talk_pub.publish(output)  # For now
+        # self.blackboard["robot"].say(output)
+
+        self.blackboard["emotionInput"] = ""
+        yield True
 
     @owyl.taskmethod
     def isVariable(self, **kwargs):
@@ -1202,6 +1296,13 @@ class Tree:
     @owyl.taskmethod
     def isNoRosInput(self, **kwargs):
         if self.blackboard["rosInput"] == "":
+            yield True
+        else:
+            yield False
+
+    @owyl.taskmethod
+    def isEmotionInput(self, **kwargs):
+        if not self.blackboard["emotionInput"] == "":
             yield True
         else:
             yield False
