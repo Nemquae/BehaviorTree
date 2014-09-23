@@ -83,8 +83,8 @@ class Tree:
         rospy.Subscriber("speech_active", Bool, self.isSpeakingCallback)
         rospy.Subscriber("facedetect", targets, self.faceDetectCallback)
         rospy.Subscriber("/nmpt_saliency_point", targets, self.saliencyCallback)
-        rospy.Subscriber("emo_pub", String, self.emotionCallback)
-        rospy.Subscriber("affect_pub", String, self.emotionCallback)
+        rospy.Subscriber("emo_pub", String, self.emoCallback)
+        rospy.Subscriber("affect_pub", String, self.affectCallback)
         self.itf_talk_pub = rospy.Publisher("itf_talk", String, queue_size=1)
         self.zenodial_listen_pub = rospy.Publisher("zenodial_listen", String, queue_size=1)
         self.robot_movement_pub = rospy.Publisher("robot_movement", String, queue_size=1)
@@ -118,7 +118,9 @@ class Tree:
         self.blackboard["audioInputVol"] = 0                      # average volume or magnitude of the last audio input
         self.blackboard["rosInput"] = ""                          # string representation of miscellaneous commands from other ros components, usually blender
         self.blackboard["rosInputAge"] = 0                        # time since the last ros command
-        self.blackboard["emotionInput"] = ""                      # string output of the audio-emotion-analysis algorithm
+        # self.blackboard["emotionInput"] = ""                      # string output of the audio-emotion-analysis algorithm
+        self.blackboard["emoInput"] = ""
+        self.blackboard["affectInput"] = ""
         self.blackboard["emotionInputAge"] = 0                    # time since the last significant chance in emotional state
         self.blackboard["speechOutput"] = ""                      # string representation of the last speech output from the robot
         self.blackboard["speechOutputAge"] = 0                    # time since the last speech output from the robot
@@ -752,7 +754,7 @@ class Tree:
     def zenoDialCallback(self, data):
         print "(From ZenoDial) " + data.data
         # self.itf_talk_pub.publish(data.data)  # For now
-        self.robot.say(data.data)
+        self.blackboard["robot"].say(data.data)
         self.blackboard["speechOutputAge"] = 0
 
     def audioInputCallback(self, data):
@@ -805,14 +807,13 @@ class Tree:
         # self.blackboard["robot"].gaze_and_wait(Person(0).head, speed=0.5)
         del self.blackboard["saliencyTarget"][0]
 
-    def emotionCallback(self, data):
-        self.blackboard["emotionInputAge"] = 0
-        if not self.blackboard["emotionInput"] == "" and self.blackboard["emotionInput"].find("and") < 0:
-            self.blackboard["emotionInput"] = self.blackboard["emotionInput"] + " and " + data.data
-        else:
-            self.blackboard["emotionInput"] = data.data
-        if self.blackboard["emotionInput"].find("and") > 0:
-            print "Emotion = " + self.blackboard["emotionInput"]
+    def emoCallback(self, data):
+        self.blackboard["emoInput"] = data.data
+        print "emo = " + self.blackboard["emoInput"]
+
+    def affectCallback(self, data):
+        self.blackboard["affectInput"] = data.data
+        print "affect = " + self.blackboard["affectInput"]
 
     def getTheYoungestPerson(self):
         youngest_age = -1
@@ -1145,7 +1146,7 @@ class Tree:
 
     @owyl.taskmethod
     def startEmotionDetection(self, **kwargs):
-        emotion = self.blackboard["emotionInput"]
+        emotion = self.blackboard["emoInput"] + " and " + self.blackboard["affectInput"]
         output = "You are very "
 
         emotion = emotion\
@@ -1197,7 +1198,8 @@ class Tree:
         # self.itf_talk_pub.publish(output)  # For now
         self.blackboard["robot"].say(output)
 
-        self.blackboard["emotionInput"] = ""
+        self.blackboard["emoInput"] = ""
+        self.blackboard["affectInput"] = ""
         self.blackboard["audioInput"] = ""
         yield True
 
@@ -1277,15 +1279,14 @@ class Tree:
 
     @owyl.taskmethod
     def isEmotionInput(self, **kwargs):
-        if not self.blackboard["emotionInput"] == "":
-        # if not self.blackboard["emotionInput"]:
+        if not self.blackboard["emoInput"] == "" and not self.blackboard["affectInput"] == "":
             yield True
         else:
             yield False
 
     @owyl.taskmethod
     def isNoEmotionInput(self, **kwargs):
-        if self.blackboard["emotionInput"] == "":
+        if self.blackboard["emoInput"] == "" and self.blackboard["affectInput"] == "":
             yield True
         else:
             yield False
