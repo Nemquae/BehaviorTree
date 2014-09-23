@@ -89,12 +89,13 @@ class Tree:
         self.zenodial_listen_pub = rospy.Publisher("zenodial_listen", String, queue_size=1)
         self.robot_movement_pub = rospy.Publisher("robot_movement", String, queue_size=1)
         self.itf_talk_stop_pub = rospy.Publisher("itf_talk_stop", String, queue_size=1)
+        self.itf_robot_name_pub = rospy.Publisher("itf_robot_name", String, queue_size=1)
 
         self.blackboard["commandKeywords"] = {
-                'Walk Forward': ['go forward', 'move forward', 'go ahead', 'move ahead', 'go straight', 'move straight', 'go forwards', 'move forwards'],
-                'Walk Backward': ['go back', 'move back', 'go backward', 'move backward', 'go backwards', 'move backwards'],
-                'Turn Left': ['turn left', 'turn lefts', 'turns left'],
-                'Turn Right': ['turn right', 'turn rights', 'turns right'],
+                'Walking Forward': ['go forward', 'move forward', 'go ahead', 'move ahead', 'go straight', 'move straight', 'go forwards', 'move forwards'],
+                'Walking Backward': ['go back', 'move back', 'go backward', 'move backward', 'go backwards', 'move backwards'],
+                'Turning Left': ['turn left', 'turn lefts', 'turns left'],
+                'Turning Right': ['turn right', 'turn rights', 'turns right'],
                 'Stop Speaking': ['stop speaking', 'shut up']}
         self.blackboard["playemotion"] = {
                 "Start Emotion Detection": ["start emotion detection"]}
@@ -139,10 +140,10 @@ class Tree:
         self.blackboard["neckFreedom"] = 0.5
         self.blackboard["Idle"] = "Idle"
         self.blackboard["StopSpeech"] = "Stop Speech"
-        self.blackboard["WalkForward"] = "Walk Forward"
-        self.blackboard["WalkBackward"] = "Walk Backward"
-        self.blackboard["TurnLeft"] = "Turn Left"
-        self.blackboard["TurnRight"] = "Turn Right"
+        self.blackboard["WalkForward"] = "Walking Forward"
+        self.blackboard["WalkBackward"] = "Walking Backward"
+        self.blackboard["TurnLeft"] = "Turning Left"
+        self.blackboard["TurnRight"] = "Turning Right"
         self.blackboard["PointUp"] = "Point Up"
         self.blackboard["PointDown"] = "Point Down"
         self.blackboard["LookUp"] = "Look Up"
@@ -406,13 +407,15 @@ class Tree:
             if case("BasicZenoTree"):
                 # self.blackboard["robot"] = Zeno()
                 self.blackboard["robotName"] = "Zeno"
+                self.itf_robot_name_pub.publish(self.blackboard["robotName"])
                 self.tree = self.makeBasicZenoTree()
                 while True:
                     self.tree.next()
                 break
             if case("BasicZoidSteinTree"):
                 self.blackboard["robot"] = Zoidstein()
-                self.blackboard["robotName"] = "Zoid"
+                self.blackboard["robotName"] = "Zoidstein"
+                self.itf_robot_name_pub.publish(self.blackboard["robotName"])
                 self.tree = self.makeBasicZoidSteinTree()
                 while True:
                     self.tree.next()
@@ -958,31 +961,31 @@ class Tree:
         # part = kwargs["part"]
 
         if actionName == "Smile":
-            if self.blackboard["robotName"] == "Zoid":
+            if self.blackboard["robotName"] == "Zoidstein":
                 self.blackboard["robot"].show_expression(ZoidExpression.smile, 1.0)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].show_expression(ZenoExpression.smile, 1.0)
 
         elif actionName == "Frown Mouth":
-            if self.blackboard["robotName"] == "Zoid":
+            if self.blackboard["robotName"] == "Zoidstein":
                 self.blackboard["robot"].show_expression(ZoidExpression.frown_mouth, 1.0)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].show_expression(ZenoExpression.frown_mouth, 1.0)
 
         elif actionName == "Frown":
-            if self.blackboard["robotName"] == "Zoid":
+            if self.blackboard["robotName"] == "Zoidstein":
                 self.blackboard["robot"].show_expression(ZoidExpression.frown, 1.0)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].show_expression(ZenoExpression.frown, 1.0)
 
         elif actionName == "Open Mouth":
-            if self.blackboard["robotName"] == "Zoid":
+            if self.blackboard["robotName"] == "Zoidstein":
                 self.blackboard["robot"].show_expression(ZoidExpression.open_mouth, 1.0)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].show_expression(ZenoExpression.open_mouth, 1.0)
 
         elif actionName == "Wave":
-            if self.blackboard["robotName"] == "Zoid":
+            if self.blackboard["robotName"] == "Zoidstein":
                 self.blackboard["robot"].gesture(ZoidGestureData.BConLeftArmWave)
                 self.blackboard["robot"].gesture(ZoidGestureData.BConEightArmWave)
             elif self.blackboard["robotName"] == "Zeno":
@@ -990,55 +993,55 @@ class Tree:
                 self.blackboard["robot"].gesture(ZenoGestureData.BConEightArmWave)
 
         elif actionName == "Idle":
-            if self.blackboard["robotName"] == "Zoid":
+            if self.blackboard["robotName"] == "Zoidstein":
                 self.blackboard["robot"].gesture(ZoidGestureData.Idle)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.Idle)
 
         elif actionName == "Look Up":
-            if self.blackboard["robotName"] == "Zoid":
+            if self.blackboard["robotName"] == "Zoidstein":
                 self.blackboard["robot"].gesture(ZoidGestureData.LookUp)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.LookUp)
 
         elif actionName == "Look Down":
-            if self.blackboard["robotName"] == "Zoid":
+            if self.blackboard["robotName"] == "Zoidstein":
                 self.blackboard["robot"].gesture(ZoidGestureData.LookDown)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.LookDown)
 
         elif actionName == "Point Up":
-            if self.blackboard["robotName"] == "Zoid":
+            if self.blackboard["robotName"] == "Zoidstein":
                 self.blackboard["robot"].gesture(ZoidGestureData.PointUp)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.PointUp)
 
         elif actionName == "Point Down":
-            if self.blackboard["robotName"] == "Zoid":
+            if self.blackboard["robotName"] == "Zoidstein":
                 self.blackboard["robot"].gesture(ZoidGestureData.PointDown)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.PointDown)
 
-        elif actionName == "Walk Forward":
-            if self.blackboard["robotName"] == "Zoid":
+        elif actionName == "Walking Forward":
+            if self.blackboard["robotName"] == "Zoidstein":
                 self.blackboard["robot"].gesture(ZoidGestureData.WalkForward1)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.WalkForward1)
 
-        elif actionName == "Walk Backward":
-            if self.blackboard["robotName"] == "Zoid":
+        elif actionName == "Walking Backward":
+            if self.blackboard["robotName"] == "Zoidstein":
                 self.blackboard["robot"].gesture(ZoidGestureData.WalkBackward1)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.WalkBackward1)
 
-        elif actionName == "Turn Left":
-            if self.blackboard["robotName"] == "Zoid":
+        elif actionName == "Turning Left":
+            if self.blackboard["robotName"] == "Zoidstein":
                 self.blackboard["robot"].gesture(ZoidGestureData.TurnLeft)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.TurnLeft)
 
-        elif actionName == "Turn Right":
-            if self.blackboard["robotName"] == "Zoid":
+        elif actionName == "Turning Right":
+            if self.blackboard["robotName"] == "Zoidstein":
                 self.blackboard["robot"].gesture(ZoidGestureData.TurnRight)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.TurnRight)
@@ -1108,6 +1111,8 @@ class Tree:
 
     @owyl.taskmethod
     def isCommandPhrase(self, **kwargs):
+        print "commandName = " + self.blackboard[kwargs["commandName"]]
+        print "actionPhrase = " + self.blackboard[kwargs["actionPhrase"]]
         if self.blackboard[kwargs["commandName"]] == self.blackboard[kwargs["actionPhrase"]]:
             yield True
         else:
@@ -1334,6 +1339,7 @@ if __name__ == "__main__":
 
     # tree_name = "BasicZenoTree"
     tree_name = "BasicZoidSteinTree"
+
     director.init(resizable=True, caption="Owyl Behavior Tree Demo :" + tree_name, width=1, height=1)
     s = Scene(TreeLayer(tree_name))
     director.run(s)
