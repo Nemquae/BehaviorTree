@@ -156,6 +156,8 @@ class Tree:
         self.blackboard["neckFree0.1"] = self.blackboard["randomInput"] * 0.1 * self.blackboard["neckFreedom"]
         self.blackboard["neckFree0.3"] = self.blackboard["randomInput"] * 0.3 * self.blackboard["neckFreedom"]
         self.blackboard["isDetectingEmotion"] = False
+        self.blackboard["emotionDetectionStart"] = False
+        self.blackboard["emotionDetectionEnd"] = False
         self.blackboard["boolean_true"] = True
         self.blackboard["boolean_false"] = False
         self.blackboard["null"] = ""
@@ -749,8 +751,8 @@ class Tree:
 
     def zenoDialCallback(self, data):
         print "(From ZenoDial) " + data.data
-        self.itf_talk_pub.publish(data.data)  # For now
-        # self.robot.say(data.data)
+        # self.itf_talk_pub.publish(data.data)  # For now
+        self.robot.say(data.data)
         self.blackboard["speechOutputAge"] = 0
 
     def audioInputCallback(self, data):
@@ -937,16 +939,16 @@ class Tree:
 
     @owyl.taskmethod
     def say(self, **kwargs):
-        self.itf_talk_pub.publish(kwargs["utterance"])  # For now
-        # self.blackboard["robot"].say(kwargs["utterance"])
+        # self.itf_talk_pub.publish(kwargs["utterance"])  # For now
+        self.blackboard["robot"].say(kwargs["utterance"])
         self.blackboard["speechOutputAge"] = 0
         yield True
 
     @owyl.taskmethod
     def sayStartAction(self, **kwargs):
         print "Okay, " + self.blackboard[kwargs["key"]] + "..."
-        self.itf_talk_pub.publish("Okay, " + self.blackboard[kwargs["key"]] + "...")  # For now
-        # self.blackboard["robot"].say("I'll start to " + self.blackboard[kwargs["action"]] + "...")
+        # self.itf_talk_pub.publish("Okay, " + self.blackboard[kwargs["key"]] + "...")  # For now
+        self.blackboard["robot"].say("I'll start to " + self.blackboard[kwargs["key"]] + "...")
         yield True
 
     @owyl.taskmethod
@@ -1117,15 +1119,11 @@ class Tree:
             return
 
         audioInput = self.blackboard[kwargs["key"]]
-        found = False
         for (key, keywords) in self.blackboard["stopplayemotion"].iteritems():
             for word in keywords:
                 if audioInput.find(word) > -1:
-                    found = True
-                    self.blackboard["isDetectingEmotion"] = False
-                    yield False
-        if not found:
-            yield True
+                    self.blackboard["emotionDetectionEnd"] = True
+        yield True
 
     @owyl.taskmethod
     def isEmotionDetection(self, **kwargs):
@@ -1140,17 +1138,15 @@ class Tree:
                 if audioInput.find(word) > -1:
                     found = True
                     self.blackboard["isDetectingEmotion"] = True
+                    self.blackboard["emotionDetectionStart"] = True
                     yield True
         if not found:
             yield False
 
     @owyl.taskmethod
     def startEmotionDetection(self, **kwargs):
-        if self.blackboard["emotionInput"]:  # TODO: Should not need this part
-            emotion = self.blackboard["emotionInput"]
-            output = "You are very "
-        else:
-            return
+        emotion = self.blackboard["emotionInput"]
+        output = "You are very "
 
         emotion = emotion\
             .replace("anger", "angry")\
@@ -1187,11 +1183,22 @@ class Tree:
         #     output += "neutral"
 
         output += emotion
+        # For the first around
+        if self.blackboard["emotionDetectionStart"]:
+            output = "Sure, Let's start the game!"
+            self.blackboard["emotionDetectionStart"] = False
+        # For the last around
+        elif self.blackboard["emotionDetectionEnd"]:
+            output = "Okay, " + output + " by the way."
+            self.blackboard["isDetectingEmotion"] = False
+            self.blackboard["emotionDetectionEnd"] = False
+
         print output
         # self.itf_talk_pub.publish(output)  # For now
-        # self.blackboard["robot"].say(output)
+        self.blackboard["robot"].say(output)
 
         self.blackboard["emotionInput"] = ""
+        self.blackboard["audioInput"] = ""
         yield True
 
     @owyl.taskmethod
@@ -1235,6 +1242,7 @@ class Tree:
     @owyl.taskmethod
     def isAudioInput(self, **kwargs):
         if not self.blackboard["audioInput"] == "":
+            # print "AudioInput = " + str(self.blackboard["AudioInput"])
             yield True
         else:
             yield False
@@ -1269,8 +1277,8 @@ class Tree:
 
     @owyl.taskmethod
     def isEmotionInput(self, **kwargs):
-        # if not self.blackboard["emotionInput"] == "":
-        if not self.blackboard["emotionInput"]:
+        if not self.blackboard["emotionInput"] == "":
+        # if not self.blackboard["emotionInput"]:
             yield True
         else:
             yield False
