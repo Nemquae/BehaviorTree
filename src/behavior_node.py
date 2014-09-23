@@ -44,7 +44,8 @@ import owyl
 
 # Jamie's API
 from hri_api.entities import Person, World, Saliency
-from zoidstein_hri.zoidstein import Zoidstein, ZoidExpression, ZoidGestureData
+from zoidstein_hri.zoidstein import Zoidstein, Expression, Gesture
+
 from hri_api.query import Query
 
 from cocos.director import director
@@ -85,6 +86,7 @@ class Tree:
         rospy.Subscriber("/nmpt_saliency_point", targets, self.saliencyCallback)
         rospy.Subscriber("emo_pub", String, self.emoCallback)
         rospy.Subscriber("affect_pub", String, self.affectCallback)
+        rospy.Subscriber("object_pub", String, self.objectRecognitionCallback)
         self.itf_talk_pub = rospy.Publisher("itf_talk", String, queue_size=1)
         self.zenodial_listen_pub = rospy.Publisher("zenodial_listen", String, queue_size=1)
         self.robot_movement_pub = rospy.Publisher("robot_movement", String, queue_size=1)
@@ -98,9 +100,13 @@ class Tree:
                 'Turning Right': ['turn right', 'turn rights', 'turns right'],
                 'Stop Speaking': ['stop speaking', 'shut up']}
         self.blackboard["playemotion"] = {
-                "Start Emotion Detection": ["start emotion detection"]}
+                "Start Emotion Detection": ["start emotion detection", "play emotion detection"]}
         self.blackboard["stopplayemotion"] = {
                 "Stop Emotion Detection": ["stop emotion detection"]}
+        self.blackboard["playObjRecognition"] = {
+                "Start Object Recognition": ["start object recognition", "play object recognition"]}
+        self.blackboard["stopObjRecognition"] = {
+                "Stop Object Recognition": ["stop object recognition"]}
 
         ### Inputs
         self.blackboard["faceTarget"] = {}                        # seq no: [Person obj, x, y, velocity, age, disappear_age]
@@ -161,6 +167,10 @@ class Tree:
         self.blackboard["isDetectingEmotion"] = False
         self.blackboard["emotionDetectionStart"] = False
         self.blackboard["emotionDetectionEnd"] = False
+        self.blackboard["objectRecognized"] = ""
+        self.blackboard["isRecognizingObject"] = ""
+        self.blackboard["objectRecognitionStart"] = ""
+        self.blackboard["objectRecognitionEnd"] = ""
         self.blackboard["boolean_true"] = True
         self.blackboard["boolean_false"] = False
         self.blackboard["null"] = ""
@@ -480,7 +490,7 @@ class Tree:
                             ),
                             owyl.sequence(
                                 self.isSalientTarget(),
-                                # self.isNoFaceTarget(),  # TODO: May have face targets in the system when a salient target comes out?
+                                # self.isNoFaceTarget(),
                                 self.isNoAudioInput(),
                                 self.isNoRosInput(),
                                 self.isNoEmotionInput(),
@@ -550,6 +560,16 @@ class Tree:
                                 self.isEmotionDetection(key="audioInput"),
                                 self.isNotSpeaking(),
                                 self.startEmotionDetection()
+                            ),
+                            owyl.sequence(
+                                owyl.selector(
+                                    self.isAudioInput(),
+                                    self.isObjInput(),
+                                ),
+                                self.isNotStopObjRecognition(key="audioInput"),
+                                self.isObjRecognition(key="audioInput"),
+                                self.isNotSpeaking(),
+                                self.startObjRecognition()
                             ),
                             owyl.sequence(
                                 self.isAudioInput(),
@@ -702,7 +722,7 @@ class Tree:
                             ),
                             owyl.sequence(
                                 self.isSalientTarget(),
-                                # self.isNoFaceTarget(),  # TODO: May have face targets in the system when a salient target comes out?
+                                # self.isNoFaceTarget(),
                                 self.isNoAudioInput(),
                                 self.isNoRosInput(),
                                 self.isNoEmotionInput(),
@@ -755,10 +775,10 @@ class Tree:
         return owyl.visit(zenoTree, blackboard=self.blackboard)
 
     def zenoDialCallback(self, data):
-        print "(From ZenoDial) " + data.data
         # self.itf_talk_pub.publish(data.data)  # For now
         self.blackboard["robot"].say(data.data)
         self.blackboard["speechOutputAge"] = 0
+        print "(From ZenoDial) " + data.data
 
     def audioInputCallback(self, data):
         self.blackboard["audioInputAge"] = 0
@@ -817,6 +837,10 @@ class Tree:
     def affectCallback(self, data):
         self.blackboard["affectInput"] = data.data
         print "affect = " + self.blackboard["affectInput"]
+
+    def objectRecognitionCallback(self, data):
+        self.blackboard["objectRecognized"] = data.data
+        print "Object recognized = " + self.blackboard["objectRecognized"]
 
     def getTheYoungestPerson(self):
         youngest_age = -1
@@ -962,87 +986,86 @@ class Tree:
 
         if actionName == "Smile":
             if self.blackboard["robotName"] == "Zoidstein":
-                self.blackboard["robot"].show_expression(ZoidExpression.smile, 1.0)
+                self.blackboard["robot"].show_expression(Expression.Smile, 1.0)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].show_expression(ZenoExpression.smile, 1.0)
 
         elif actionName == "Frown Mouth":
             if self.blackboard["robotName"] == "Zoidstein":
-                self.blackboard["robot"].show_expression(ZoidExpression.frown_mouth, 1.0)
+                self.blackboard["robot"].show_expression(Expression.FrownMouth, 1.0)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].show_expression(ZenoExpression.frown_mouth, 1.0)
 
         elif actionName == "Frown":
             if self.blackboard["robotName"] == "Zoidstein":
-                self.blackboard["robot"].show_expression(ZoidExpression.frown, 1.0)
+                self.blackboard["robot"].show_expression(Expression.Frown, 1.0)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].show_expression(ZenoExpression.frown, 1.0)
 
         elif actionName == "Open Mouth":
             if self.blackboard["robotName"] == "Zoidstein":
-                self.blackboard["robot"].show_expression(ZoidExpression.open_mouth, 1.0)
+                self.blackboard["robot"].show_expression(Expression.OpenMouth, 1.0)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].show_expression(ZenoExpression.open_mouth, 1.0)
 
         elif actionName == "Wave":
             if self.blackboard["robotName"] == "Zoidstein":
-                self.blackboard["robot"].gesture(ZoidGestureData.BConLeftArmWave)
-                self.blackboard["robot"].gesture(ZoidGestureData.BConEightArmWave)
+                self.blackboard["robot"].gesture(Gesture.WaveHands)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.BConLeftArmWave)
                 self.blackboard["robot"].gesture(ZenoGestureData.BConEightArmWave)
 
-        elif actionName == "Idle":
-            if self.blackboard["robotName"] == "Zoidstein":
-                self.blackboard["robot"].gesture(ZoidGestureData.Idle)
-            elif self.blackboard["robotName"] == "Zeno":
-                self.blackboard["robot"].gesture(ZenoGestureData.Idle)
+        # elif actionName == "Idle":
+        #     if self.blackboard["robotName"] == "Zoidstein":
+        #         self.blackboard["robot"].gesture(Gesture.Idle)
+        #     elif self.blackboard["robotName"] == "Zeno":
+        #         self.blackboard["robot"].gesture(ZenoGestureData.Idle)
 
-        elif actionName == "Look Up":
-            if self.blackboard["robotName"] == "Zoidstein":
-                self.blackboard["robot"].gesture(ZoidGestureData.LookUp)
-            elif self.blackboard["robotName"] == "Zeno":
-                self.blackboard["robot"].gesture(ZenoGestureData.LookUp)
+        # elif actionName == "Look Up":
+        #     if self.blackboard["robotName"] == "Zoidstein":
+        #         self.blackboard["robot"].gesture(Gesture.LookUp)
+        #     elif self.blackboard["robotName"] == "Zeno":
+        #         self.blackboard["robot"].gesture(ZenoGestureData.LookUp)
+        #
+        # elif actionName == "Look Down":
+        #     if self.blackboard["robotName"] == "Zoidstein":
+        #         self.blackboard["robot"].gesture(Gesture.LookDown)
+        #     elif self.blackboard["robotName"] == "Zeno":
+        #         self.blackboard["robot"].gesture(ZenoGestureData.LookDown)
 
-        elif actionName == "Look Down":
-            if self.blackboard["robotName"] == "Zoidstein":
-                self.blackboard["robot"].gesture(ZoidGestureData.LookDown)
-            elif self.blackboard["robotName"] == "Zeno":
-                self.blackboard["robot"].gesture(ZenoGestureData.LookDown)
-
-        elif actionName == "Point Up":
-            if self.blackboard["robotName"] == "Zoidstein":
-                self.blackboard["robot"].gesture(ZoidGestureData.PointUp)
-            elif self.blackboard["robotName"] == "Zeno":
-                self.blackboard["robot"].gesture(ZenoGestureData.PointUp)
-
-        elif actionName == "Point Down":
-            if self.blackboard["robotName"] == "Zoidstein":
-                self.blackboard["robot"].gesture(ZoidGestureData.PointDown)
-            elif self.blackboard["robotName"] == "Zeno":
-                self.blackboard["robot"].gesture(ZenoGestureData.PointDown)
+        # elif actionName == "Point Up":
+        #     if self.blackboard["robotName"] == "Zoidstein":
+        #         self.blackboard["robot"].gesture(Gesture.PointUp)
+        #     elif self.blackboard["robotName"] == "Zeno":
+        #         self.blackboard["robot"].gesture(ZenoGestureData.PointUp)
+        #
+        # elif actionName == "Point Down":
+        #     if self.blackboard["robotName"] == "Zoidstein":
+        #         self.blackboard["robot"].gesture(Gesture.PointDown)
+        #     elif self.blackboard["robotName"] == "Zeno":
+        #         self.blackboard["robot"].gesture(ZenoGestureData.PointDown)
 
         elif actionName == "Walking Forward":
             if self.blackboard["robotName"] == "Zoidstein":
-                self.blackboard["robot"].gesture(ZoidGestureData.WalkForward1)
+                self.blackboard["robot"].gesture(Gesture.WalkForward1)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.WalkForward1)
 
         elif actionName == "Walking Backward":
             if self.blackboard["robotName"] == "Zoidstein":
-                self.blackboard["robot"].gesture(ZoidGestureData.WalkBackward1)
+                self.blackboard["robot"].gesture(Gesture.WalkBackward1)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.WalkBackward1)
 
         elif actionName == "Turning Left":
             if self.blackboard["robotName"] == "Zoidstein":
-                self.blackboard["robot"].gesture(ZoidGestureData.TurnLeft)
+                self.blackboard["robot"].gesture(Gesture.WalkLeftTurnInPlace)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.TurnLeft)
 
         elif actionName == "Turning Right":
             if self.blackboard["robotName"] == "Zoidstein":
-                self.blackboard["robot"].gesture(ZoidGestureData.TurnRight)
+                self.blackboard["robot"].gesture(Gesture.WalkRightTurnInPlace)
             elif self.blackboard["robotName"] == "Zeno":
                 self.blackboard["robot"].gesture(ZenoGestureData.TurnRight)
 
@@ -1111,8 +1134,6 @@ class Tree:
 
     @owyl.taskmethod
     def isCommandPhrase(self, **kwargs):
-        print "commandName = " + self.blackboard[kwargs["commandName"]]
-        print "actionPhrase = " + self.blackboard[kwargs["actionPhrase"]]
         if self.blackboard[kwargs["commandName"]] == self.blackboard[kwargs["actionPhrase"]]:
             yield True
         else:
@@ -1163,31 +1184,6 @@ class Tree:
             .replace("sadness", "sad")\
             .replace("agressiv", "aggressive")
 
-        # if output.find("anger") > 0:
-        #     output.replace("anger", "angry")
-        # elif emotionInput == "boredom":
-        #     output += "bored"
-        # elif emotionInput == "disgust":
-        #     output += "disgusting"
-        # elif emotionInput == "fear":
-        #     output += "fearful"
-        # elif emotionInput == "happiness":
-        #     output += "happy"
-        # elif emotionInput == "sadness":
-        #     output += "sad"
-        # elif emotionInput == "agressiv":
-        #     output += "aggressive"
-        # elif emotionInput == "cheerful":
-        #     output += "cheerful"
-        # elif emotionInput == "intoxicated":
-        #     output += "intoxicated"
-        # elif emotionInput == "nervous":
-        #     output += "nervous"
-        # elif emotionInput == "tired":
-        #     output += "tired"
-        # else:
-        #     output += "neutral"
-
         output += emotion
         # For the first around
         if self.blackboard["emotionDetectionStart"]:
@@ -1207,6 +1203,73 @@ class Tree:
         self.blackboard["affectInput"] = ""
         self.blackboard["audioInput"] = ""
         yield True
+
+    @owyl.taskmethod
+    def isNotStopObjRecognition(self, **kwargs):
+        if not self.blackboard["isRecognizingObject"]:
+            yield True
+            return
+
+        audioInput = self.blackboard[kwargs["key"]]
+        for (key, keywords) in self.blackboard["stopObjRecognition"].iteritems():
+            for word in keywords:
+                if audioInput.find(word) > -1:
+                    self.blackboard["objectRecognitionEnd"] = True
+        yield True
+
+    @owyl.taskmethod
+    def isObjRecognition(self, **kwargs):
+        if self.blackboard["isRecognizingObject"]:
+            yield True
+            return
+
+        audioInput = self.blackboard[kwargs["key"]]
+        found = False
+        for (key, keywords) in self.blackboard["playObjRecognition"].iteritems():
+            for word in keywords:
+                if audioInput.find(word) > -1:
+                    found = True
+                    self.blackboard["isRecognizingObject"] = True
+                    self.blackboard["objectRecognitionStart"] = True
+                    yield True
+        if not found:
+            yield False
+
+    @owyl.taskmethod
+    def startObjRecognition(self, **kwargs):
+        output = "This is a " + self.blackboard["objectRecognized"]
+
+        # For the first around
+        if self.blackboard["objectRecognitionStart"]:
+            output = "Sure, Let's start the game!"
+            self.blackboard["objectRecognitionStart"] = False
+        # For the last around
+        elif self.blackboard["objectRecognitionEnd"]:
+            output = "Okay, " + output + " by the way."
+            self.blackboard["isRecognizingObject"] = False
+            self.blackboard["objectRecognitionEnd"] = False
+
+        print output
+        # self.itf_talk_pub.publish(output)  # For now
+        self.blackboard["robot"].say(output)
+
+        self.blackboard["objectRecognized"] = ""
+        self.blackboard["audioInput"] = ""
+        yield True
+
+    @owyl.taskmethod
+    def isObjInput(self, **keargs):
+        if not self.blackboard["objectRecognized"] == "":
+            yield True
+        else:
+            yield False
+
+    @owyl.taskmethod
+    def isNoObjInput(self, **keargs):
+        if self.blackboard["objectRecognized"] == "":
+            yield True
+        else:
+            yield False
 
     @owyl.taskmethod
     def isVariable(self, **kwargs):
@@ -1303,7 +1366,7 @@ class Tree:
 
     @owyl.taskmethod
     def dance(self, **kwargs):
-        self.blackboard["robot"].gesture(ZoidGestureData.BConDance)
+        self.blackboard["robot"].gesture(Gesture.BConDance)
         yield True
 
 class TreeLayer(ScrollableLayer):
